@@ -99,7 +99,7 @@ static void op_illegal(CPU *cpu, Bus *bus, u8 opcode) {
   fprintf(stderr, "Illegal/unimplemented opcode: 0x%02X at PC=0x%04X\n",
           (unsigned)opcode, (unsigned)(u16)(cpu->PC - 1));
 
-  abort();
+  exit(1);
 }
 
 static void op_nop(CPU *cpu, Bus *bus, u8 opcode) {
@@ -109,6 +109,8 @@ static void op_nop(CPU *cpu, Bus *bus, u8 opcode) {
 }
 
 static void op_lda_imm(CPU *cpu, Bus *bus, u8 opcode) {
+  (void)opcode;
+
   u8 value = fetch8(cpu, bus);
   cpu->A = value;
   cpu_update_zero_and_negative_flags(cpu, cpu->A);
@@ -116,11 +118,51 @@ static void op_lda_imm(CPU *cpu, Bus *bus, u8 opcode) {
 }
 
 static void op_lda_zp(CPU *cpu, Bus *bus, u8 opcode) {
+  (void)opcode;
+
   u8 addr = fetch8(cpu, bus);
   u8 value = bus->read(bus->self, addr);
   cpu->A = value;
   cpu_update_zero_and_negative_flags(cpu, cpu->A);
   cpu->cycles += 3; // LDA zero page takes 3 cycles
+}
+
+static void op_ldx_imm(CPU *cpu, Bus *bus, u8 opcode) {
+  (void)opcode;
+
+  u8 value = fetch8(cpu, bus);
+  cpu->X = value;
+  cpu_update_zero_and_negative_flags(cpu, cpu->X);
+  cpu->cycles += 2; // LDX immediate takes 2 cycles
+}
+
+static void op_ldx_zp(CPU *cpu, Bus *bus, u8 opcode) {
+  (void)opcode;
+
+  u8 addr = fetch8(cpu, bus);
+  u8 value = bus->read(bus->self, addr);
+  cpu->X = value;
+  cpu_update_zero_and_negative_flags(cpu, cpu->X);
+  cpu->cycles += 3; // LDX zero page takes 3 cycles
+}
+
+static void op_ldy_imm(CPU *cpu, Bus *bus, u8 opcode) {
+  (void)opcode;
+
+  u8 value = fetch8(cpu, bus);
+  cpu->Y = value;
+  cpu_update_zero_and_negative_flags(cpu, cpu->Y);
+  cpu->cycles += 2;
+}
+
+static void op_ldy_zp(CPU *cpu, Bus *bus, u8 opcode) {
+  (void)opcode;
+
+  u8 addr = fetch8(cpu, bus);
+  u8 value = bus->read(bus->self, addr);
+  cpu->Y = value;
+  cpu_update_zero_and_negative_flags(cpu, cpu->Y);
+  cpu->cycles += 3;
 }
 
 static void op_sta_abs(CPU *cpu, Bus *bus, u8 opcode) {
@@ -131,6 +173,26 @@ static void op_sta_abs(CPU *cpu, Bus *bus, u8 opcode) {
   bus->write(bus->self, addr, cpu->A);
 
   cpu->cycles += 4; // STA absolute takes 4 cycles
+}
+
+static void op_stx_abs(CPU *cpu, Bus *bus, u8 opcode) {
+  (void)opcode;
+
+  u16 addr = fetch16(cpu, bus);
+
+  bus->write(bus->self, addr, cpu->X);
+
+  cpu->cycles += 4; // STX absolute takes 4 cycles
+}
+
+static void op_sty_abs(CPU *cpu, Bus *bus, u8 opcode) {
+  (void)opcode;
+
+  u16 addr = fetch16(cpu, bus);
+
+  bus->write(bus->self, addr, cpu->Y);
+
+  cpu->cycles += 4; // STX absolute takes 4 cycles
 }
 
 static void op_jmp_abs(CPU *cpu, Bus *bus, u8 opcode) {
@@ -174,10 +236,21 @@ static void op_brk(CPU *cpu, Bus *bus, u8 opcode) {
   cpu->cycles += 7; // BRK takes 7 cycles
 }
 
+static void op_php(CPU *cpu, Bus *bus, u8 opcode) {
+  (void)opcode;
+
+  // Push P onto the stack
+  bus->write(bus->self, 0x0100 + cpu->SP--, cpu->P | FLAG_B);
+
+  cpu->cycles += 3; // PHP takes 3 cycles
+}
+
 static OpcodeHandler const opcode_table[256] = {
-    [0xEA] = op_nop,     [0xA5] = op_lda_zp,  [0xA9] = op_lda_imm,
-    [0x8D] = op_sta_abs, [0x4C] = op_jmp_abs, [0x6C] = op_jmp_ind,
-    [0x00] = op_brk,
+    [0x00] = op_brk,     [0x08] = op_php,     [0x4C] = op_jmp_abs,
+    [0x6C] = op_jmp_ind, [0x8C] = op_sty_abs, [0x8D] = op_sta_abs,
+    [0x8E] = op_stx_abs, [0xA0] = op_ldy_imm, [0xA2] = op_ldx_imm,
+    [0xA4] = op_ldy_zp,  [0xA5] = op_lda_zp,  [0xA9] = op_lda_imm,
+    [0xB6] = op_ldx_zp,  [0xEA] = op_nop,
     // other opcodes are initialized to null
 };
 
@@ -283,13 +356,20 @@ bool load_program_from_file(Bus *bus, u16 start_addr, const char *filename) {
   return ok;
 }
 
-// CPU Cycle:
-// fetch opcode
-// decode opcode
-// execute instruction
-// update flags
-// add cycles
-// repeat
+static bool dump_memory(Bus *bus, const char *filename) {
+  FILE *file = fopen(filename, "wb");
+  if (!file) {
+    perror("Failed to open file for dumping memory");
+    return false;
+  }
+  size_t written = fwrite(bus->memory, 1, sizeof(bus->memory), file);
+  fclose(file);
+  if (written != sizeof(bus->memory)) {
+    fprintf(stderr, "Failed to write memory dump\n");
+    return false;
+  }
+  return true;
+}
 
 int main(void) {
   static Bus bus;
@@ -297,33 +377,27 @@ int main(void) {
 
   init_bus(&bus);
 
-  /*
-      0x0200: A9 42       LDA #$42
-      0x0202: 8D 00 03    STA $0300
-      0x0205: 4C 05 02    JMP $FFEF
-  */
+  load_program_from_file(&bus, 0x0200, "../tests/test_prog.bin");
 
-  static const u8 program[] = {
-      0xA9, 0x42,       // LDA #$42
-      0x8D, 0x00, 0x03, // STA $0300
-      0x4C, 0xEF, 0xFF  // JMP $FFEF
-  };
-
-  load_program(&bus, 0x0200, program, (usize)sizeof(program));
-
+  // Set the reset vector to point to 0x0200
   static const u8 reset_vector[] = {0x00, 0x02};
-
   load_program(&bus, 0xFFFC, reset_vector, (usize)sizeof(reset_vector));
 
   cpu_reset(&cpu, &bus);
 
-  while (cpu.PC != 0xFFEF) {
+  // Execute the program until BRK is encountered (PC = 0x00)
+  while (cpu.PC != 0x00) {
     cpu_step(&cpu, &bus);
   }
 
+  // Print CPU state after execution
   printf("A = 0x%02X\n", (unsigned)cpu.A);
-  printf("memory[0x0300] = 0x%02X\n", (unsigned)bus.read(bus.self, 0x0300));
+  printf("X = 0x%02X\n", (unsigned)cpu.X);
+  printf("Y = 0x%02X\n", (unsigned)cpu.Y);
   printf("PC = 0x%04X\n", (unsigned)cpu.PC);
+  printf("SP = 0x%02X\n", (unsigned)cpu.SP);
+  printf("P = 0x%02X\n", (unsigned)cpu.P);
+  dump_memory(&bus, "mem_dump.bin");
   printf("cycles = %llu\n", (unsigned long long)cpu.cycles);
 
   return 0;

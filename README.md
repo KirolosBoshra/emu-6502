@@ -2,6 +2,7 @@
 
 A minimal MOS 6502 CPU emulator in C.
 I wrote this in order to continue my journey of learning CPU architecture 
+I'm hoping to make it a full NES emulator eventually, but for now it's just a CPU emulator.
 
 ## Build
 
