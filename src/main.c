@@ -245,12 +245,135 @@ static void op_php(CPU *cpu, Bus *bus, u8 opcode) {
   cpu->cycles += 3; // PHP takes 3 cycles
 }
 
+static void op_adc_imm(CPU *cpu, Bus *bus, u8 opcode) {
+  (void)opcode;
+
+  u8 value = fetch8(cpu, bus);
+  bool carry = cpu_get_flag(cpu, FLAG_C);
+
+  u16 result = (uint16_t)cpu->A + (uint16_t)value + (carry ? 1 : 0);
+  // Set carry and overflow flags
+  cpu_set_flag(cpu, FLAG_C, result > 0xFF);
+  cpu_set_flag(cpu, FLAG_V,
+               !((cpu->A ^ value) & 0x80) && ((cpu->A ^ result) & 0x80));
+  cpu->A = (uint8_t)(result & 0xFF);
+  cpu_update_zero_and_negative_flags(cpu, cpu->A);
+  cpu->cycles += 2;
+}
+
+static void op_adc_zp(CPU *cpu, Bus *bus, u8 opcode) {
+  (void)opcode;
+
+  u8 addr = fetch8(cpu, bus);
+  u8 value = bus->read(bus->self, addr);
+  bool carry = cpu_get_flag(cpu, FLAG_C);
+
+  u16 result = (u16)cpu->A + (u16)value + (carry ? 1 : 0);
+  // Set carry and overflow flags
+  cpu_set_flag(cpu, FLAG_C, result > 0xFF);
+  cpu_set_flag(cpu, FLAG_V,
+               !((cpu->A ^ value) & 0x80) && ((cpu->A ^ result) & 0x80));
+  cpu->A = (u8)(result & 0xFF);
+  cpu_update_zero_and_negative_flags(cpu, cpu->A);
+  cpu->cycles += 3;
+}
+
+static void op_adc_abs(CPU *cpu, Bus *bus, u8 opcode) {
+  (void)opcode;
+
+  u16 addr = fetch16(cpu, bus);
+  u8 value = bus->read(bus->self, addr);
+  u16 result = (u16)cpu->A + (u16)value + (u16)cpu_get_flag(cpu, FLAG_C);
+
+  // Set carry and overflow flags
+  cpu_set_flag(cpu, FLAG_C, result > 0xFF);
+  cpu_set_flag(cpu, FLAG_V,
+               (~(cpu->A ^ value) & (cpu->A ^ (u8)result) & 0x80) != 0);
+
+  cpu->A = (u8)result;
+
+  // Update flags
+  cpu_update_zero_and_negative_flags(cpu, cpu->A);
+
+  cpu->cycles += 4;
+}
+
+static void op_sbc_imm(CPU *cpu, Bus *bus, u8 opcode) {
+  (void)opcode;
+
+  u8 value = fetch8(cpu, bus);
+  bool carry = cpu_get_flag(cpu, FLAG_C);
+
+  u16 result = (uint16_t)cpu->A - (uint16_t)value - (carry ? 0 : 1);
+  // Set carry and overflow flags
+  cpu_set_flag(cpu, FLAG_C, result < 0x100);
+  cpu_set_flag(cpu, FLAG_V, ((cpu->A ^ result) & (cpu->A ^ value) & 0x80) != 0);
+  cpu->A = (uint8_t)(result & 0xFF);
+  cpu_update_zero_and_negative_flags(cpu, cpu->A);
+  cpu->cycles += 2;
+}
+
+static void op_sbc_abs(CPU *cpu, Bus *bus, u8 opcode) {
+  (void)opcode;
+
+  u16 addr = fetch16(cpu, bus);
+  u8 value = bus->read(bus->self, addr);
+  bool carry = cpu_get_flag(cpu, FLAG_C);
+  u16 result = (u16)cpu->A - (u16)value - (carry ? 0 : 1);
+
+  // Set carry and overflow flags
+  cpu_set_flag(cpu, FLAG_C, result < 0x100);
+  cpu_set_flag(cpu, FLAG_V,
+               ((cpu->A ^ value) & (cpu->A ^ (u8)result) & 0x80) != 0);
+
+  cpu->A = (u8)result;
+
+  // Update flags
+  cpu_update_zero_and_negative_flags(cpu, cpu->A);
+
+  cpu->cycles += 4;
+}
+
+static void op_clc(CPU *cpu, Bus *bus, u8 opcode) {
+  (void)opcode;
+  (void)bus;
+  cpu_set_flag(cpu, FLAG_C, false);
+  cpu->cycles += 2;
+}
+
+static void op_sec(CPU *cpu, Bus *bus, u8 opcode) {
+  (void)opcode;
+  (void)bus;
+  cpu_set_flag(cpu, FLAG_C, true);
+  cpu->cycles += 2;
+}
+
+static void op_sbc_zp(CPU *cpu, Bus *bus, u8 opcode) {
+  (void)opcode;
+
+  u8 addr = fetch8(cpu, bus);
+  u8 value = bus->read(bus->self, addr);
+  bool carry = cpu_get_flag(cpu, FLAG_C);
+
+  u16 result = (u16)cpu->A - (u16)value - (carry ? 0 : 1);
+  // Set carry and overflow flags
+  cpu_set_flag(cpu, FLAG_C, result < 0x100);
+  cpu_set_flag(cpu, FLAG_V,
+               ((cpu->A ^ value) & (cpu->A ^ (u8)result) & 0x80) != 0);
+  cpu->A = (u8)(result & 0xFF);
+  cpu_update_zero_and_negative_flags(cpu, cpu->A);
+  cpu->cycles += 3;
+}
+
 static OpcodeHandler const opcode_table[256] = {
-    [0x00] = op_brk,     [0x08] = op_php,     [0x4C] = op_jmp_abs,
-    [0x6C] = op_jmp_ind, [0x8C] = op_sty_abs, [0x8D] = op_sta_abs,
-    [0x8E] = op_stx_abs, [0xA0] = op_ldy_imm, [0xA2] = op_ldx_imm,
-    [0xA4] = op_ldy_zp,  [0xA5] = op_lda_zp,  [0xA9] = op_lda_imm,
-    [0xB6] = op_ldx_zp,  [0xEA] = op_nop,
+    [0x00] = op_brk,     [0x08] = op_php,     [0x18] = op_clc,
+    [0x38] = op_sec,     [0x4C] = op_jmp_abs, [0x65] = op_adc_zp,
+    [0x69] = op_adc_imm, [0x6C] = op_jmp_ind, [0x6D] = op_adc_abs,
+    [0x8C] = op_sty_abs, [0x8D] = op_sta_abs, [0x8E] = op_stx_abs,
+    [0xA0] = op_ldy_imm, [0xA2] = op_ldx_imm, [0xA4] = op_ldy_zp,
+    [0xA5] = op_lda_zp,  [0xA9] = op_lda_imm, [0xB6] = op_ldx_zp,
+    [0xE5] = op_sbc_zp,  [0xE9] = op_sbc_imm, [0xED] = op_sbc_abs,
+    [0xEA] = op_nop,
     // other opcodes are initialized to null
 };
 
@@ -278,12 +401,12 @@ bool load_program(Bus *bus, u16 start_addr, const u8 *program,
     return false;
   }
 
-  if ((uint32_t)start_addr + (uint32_t)program_size > 0x10000u) {
+  if ((u32)start_addr + (u32)program_size > 0x10000u) {
     return false;
   }
 
   for (usize i = 0; i < program_size; ++i) {
-    u16 addr = (u16)((uint32_t)start_addr + (uint32_t)i);
+    u16 addr = (u16)((u32)start_addr + (u32)i);
     bus->write(bus->self, addr, program[i]);
   }
 
@@ -397,8 +520,21 @@ int main(void) {
   printf("PC = 0x%04X\n", (unsigned)cpu.PC);
   printf("SP = 0x%02X\n", (unsigned)cpu.SP);
   printf("P = 0x%02X\n", (unsigned)cpu.P);
-  dump_memory(&bus, "mem_dump.bin");
+
+  printf("--- ADC results ---\n");
+  for (int i = 0; i <= 8; ++i)
+    printf("  [0x030%X] = 0x%02X\n", i,
+           (unsigned)bus.read(bus.self, 0x0300 + i));
+
+  printf("--- SBC results ---\n");
+  for (int i = 0; i <= 8; ++i)
+    printf("  [0x031%X] = 0x%02X\n", i,
+           (unsigned)bus.read(bus.self, 0x0310 + i));
+
   printf("cycles = %llu\n", (unsigned long long)cpu.cycles);
+
+  // dump memory for inspecting
+  dump_memory(&bus, "mem_dump.bin");
 
   return 0;
 }
