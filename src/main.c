@@ -365,16 +365,117 @@ static void op_sbc_zp(CPU *cpu, Bus *bus, u8 opcode) {
   cpu->cycles += 3;
 }
 
+static void op_compare(CPU *cpu, u8 reg, u8 value) {
+  u16 result = (u16)reg - (u16)value;
+
+  cpu_set_flag(cpu, FLAG_C, reg >= value);
+  cpu_update_zero_and_negative_flags(cpu, (u8)result);
+}
+
+static void op_cmp_imm(CPU *cpu, Bus *bus, u8 opcode) {
+  (void)opcode;
+
+  u8 value = fetch8(cpu, bus);
+  op_compare(cpu, cpu->A, value);
+  cpu->cycles += 2;
+}
+
+static void op_cpx_imm(CPU *cpu, Bus *bus, u8 opcode) {
+  (void)opcode;
+
+  u8 value = fetch8(cpu, bus);
+  op_compare(cpu, cpu->X, value);
+  cpu->cycles += 2;
+}
+
+static void op_cpy_imm(CPU *cpu, Bus *bus, u8 opcode) {
+  (void)opcode;
+
+  u8 value = fetch8(cpu, bus);
+  op_compare(cpu, cpu->Y, value);
+  cpu->cycles += 2;
+}
+
+static void op_inc_zp(CPU *cpu, Bus *bus, u8 opcode) {
+  (void)opcode;
+
+  u8 addr = fetch8(cpu, bus);
+  u8 value = bus->read(bus->self, addr);
+
+  value++;
+
+  bus->write(bus->self, addr, value);
+  cpu_update_zero_and_negative_flags(cpu, value);
+
+  cpu->cycles += 5;
+}
+
+static void op_dec_zp(CPU *cpu, Bus *bus, u8 opcode) {
+  (void)opcode;
+
+  u8 addr = fetch8(cpu, bus);
+  u8 value = bus->read(bus->self, addr);
+
+  value--;
+
+  bus->write(bus->self, addr, value);
+  cpu_update_zero_and_negative_flags(cpu, value);
+
+  cpu->cycles += 5;
+}
+
+static void op_inx(CPU *cpu, Bus *bus, u8 opcode) {
+  (void)bus;
+  (void)opcode;
+
+  cpu->X++;
+  cpu_update_zero_and_negative_flags(cpu, cpu->X);
+
+  cpu->cycles += 2;
+}
+
+static void op_dex(CPU *cpu, Bus *bus, u8 opcode) {
+  (void)bus;
+  (void)opcode;
+
+  cpu->X--;
+  cpu_update_zero_and_negative_flags(cpu, cpu->X);
+
+  cpu->cycles += 2;
+}
+
+static void op_iny(CPU *cpu, Bus *bus, u8 opcode) {
+  (void)bus;
+  (void)opcode;
+
+  cpu->Y++;
+  cpu_update_zero_and_negative_flags(cpu, cpu->Y);
+
+  cpu->cycles += 2;
+}
+
+static void op_dey(CPU *cpu, Bus *bus, u8 opcode) {
+  (void)bus;
+  (void)opcode;
+
+  cpu->Y--;
+  cpu_update_zero_and_negative_flags(cpu, cpu->Y);
+
+  cpu->cycles += 2;
+}
+
 static OpcodeHandler const opcode_table[256] = {
     [0x00] = op_brk,     [0x08] = op_php,     [0x18] = op_clc,
     [0x38] = op_sec,     [0x4C] = op_jmp_abs, [0x65] = op_adc_zp,
     [0x69] = op_adc_imm, [0x6C] = op_jmp_ind, [0x6D] = op_adc_abs,
-    [0x8C] = op_sty_abs, [0x8D] = op_sta_abs, [0x8E] = op_stx_abs,
-    [0xA0] = op_ldy_imm, [0xA2] = op_ldx_imm, [0xA4] = op_ldy_zp,
-    [0xA5] = op_lda_zp,  [0xA9] = op_lda_imm, [0xB6] = op_ldx_zp,
-    [0xE5] = op_sbc_zp,  [0xE9] = op_sbc_imm, [0xED] = op_sbc_abs,
-    [0xEA] = op_nop,
-    // other opcodes are initialized to null
+    [0x88] = op_dey,     [0x8C] = op_sty_abs, [0x8D] = op_sta_abs,
+    [0x8E] = op_stx_abs, [0xA0] = op_ldy_imm, [0xA2] = op_ldx_imm,
+    [0xA4] = op_ldy_zp,  [0xA5] = op_lda_zp,  [0xA9] = op_lda_imm,
+    [0xB6] = op_ldx_zp,  [0xC0] = op_cpy_imm, [0xC6] = op_dec_zp,
+    [0xC8] = op_iny,     [0xC9] = op_cmp_imm, [0xCA] = op_dex,
+    [0xE0] = op_cpx_imm, [0xE5] = op_sbc_zp,  [0xE6] = op_inc_zp,
+    [0xE8] = op_inx,     [0xE9] = op_sbc_imm, [0xEA] = op_nop,
+    [0xED] = op_sbc_abs,
 };
 
 void cpu_step(CPU *cpu, Bus *bus) {
@@ -500,10 +601,10 @@ int main(void) {
 
   init_bus(&bus);
 
-  load_program_from_file(&bus, 0x0200, "../tests/test_prog.bin");
+  load_program_from_file(&bus, 0x0400, "../tests/test_prog.bin");
 
-  // Set the reset vector to point to 0x0200
-  static const u8 reset_vector[] = {0x00, 0x02};
+  // Set the reset vector to point to 0x0400
+  static const u8 reset_vector[] = {0x00, 0x04};
   load_program(&bus, 0xFFFC, reset_vector, (usize)sizeof(reset_vector));
 
   cpu_reset(&cpu, &bus);
@@ -530,6 +631,16 @@ int main(void) {
   for (int i = 0; i <= 8; ++i)
     printf("  [0x031%X] = 0x%02X\n", i,
            (unsigned)bus.read(bus.self, 0x0310 + i));
+
+  printf("--- CMP/CPX/CPY/Carry ---\n");
+  for (int i = 0; i <= 4; ++i)
+    printf("  [0x032%X] = 0x%02X\n", i,
+           (unsigned)bus.read(bus.self, 0x0320 + i));
+
+  printf("--- INC/DEC/INX/DEX/INY/DEY ---\n");
+  for (int i = 5; i <= 0xC; ++i)
+    printf("  [0x032%X] = 0x%02X\n", i,
+           (unsigned)bus.read(bus.self, 0x0320 + i));
 
   printf("cycles = %llu\n", (unsigned long long)cpu.cycles);
 

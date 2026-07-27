@@ -1,17 +1,16 @@
-; 6502 ADC + SBC test program
-; Assembles to tests/test_prog.bin
-; Load at $0200, reset vector at $FFFC -> $0200
-; Results stored at $0300-$0308 (ADC) and $0310-$0318 (SBC)
+; 6502 opcode test program
+; Load at $0400, reset vector at $FFFC -> $0400
+; Results: $0300-$0308 (ADC), $0310-$0318 (SBC), $0320-$032C (CMP/CPX/CPY/INC/DEC/INX/DEX/INY/DEY)
 
-.org $0200
+.org $0400
 
 ; ---- setup zero-page operands ----
   LDA #$30
-  STA $40          ; $40 = $30
+  STA $0040        ; $40 = $30
   LDA #$80
-  STA $50          ; $50 = $80
+  STA $0050        ; $50 = $80
   LDA #$10
-  STA $60          ; $60 = $10
+  STA $0060        ; $60 = $10
 
 ; ==== ADC tests ====
 
@@ -111,6 +110,95 @@
   LDA #$80
   SBC #$01         ; $80 - 1 = $7F, C = 1, V = 1
   STA $0318
+
+; ==== CMP tests (store carry via ADC #$00) ====
+
+; 1: carry set (A > value)
+  LDA #$40
+  CMP #$30         ; C = 1
+  LDA #$00
+  ADC #$00         ; A = 1
+  STA $0320
+
+; 2: equal (A == value)
+  LDA #$40
+  CMP #$40         ; C = 1, Z = 1
+  LDA #$00
+  ADC #$00         ; A = 1
+  STA $0321
+
+; 3: carry clear (A < value)
+  LDA #$40
+  CMP #$50         ; C = 0, N = 1
+  LDA #$00
+  ADC #$00         ; A = 0
+  STA $0322
+
+; ==== CPX tests ====
+
+; 4: carry set (X > value)
+  LDX #$20
+  CPX #$10         ; C = 1
+  LDA #$00
+  ADC #$00         ; A = 1
+  STA $0323
+
+; ==== CPY tests ====
+
+; 5: carry clear (Y < value)
+  LDY #$20
+  CPY #$30         ; C = 0
+  LDA #$00
+  ADC #$00         ; A = 0
+  STA $0324
+
+; ==== INC / DEC tests ====
+
+; 6: INC from 0
+  LDA #$00
+  STA $0070        ; $70 = 0
+  INC $70          ; $70 = 1
+  LDA $70
+  STA $0325
+
+; 7: INC again
+  INC $70          ; $70 = 2
+  LDA $70
+  STA $0326
+
+; 8: DEC from 2
+  DEC $70          ; $70 = 1
+  LDA $70
+  STA $0327
+
+; 9: DEC to 0
+  DEC $70          ; $70 = 0, Z = 1
+  LDA $70
+  STA $0328
+
+; ==== INX / DEX tests ====
+
+; 10: INX to zero
+  LDX #$FE
+  INX              ; X = $FF
+  INX              ; X = $00, Z = 1
+  STX $0329
+
+; 11: DEX to negative
+  DEX              ; X = $FF, N = 1
+  STX $032A
+
+; ==== INY / DEY tests ====
+
+; 12: INY
+  LDY #$01
+  INY              ; Y = $02
+  STY $032B
+
+; 13: DEY to zero
+  DEY              ; Y = $01
+  DEY              ; Y = $00, Z = 1
+  STY $032C
 
 ; ---- halt ----
   BRK
