@@ -3,6 +3,7 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 // Type Definitions
 
@@ -586,7 +587,7 @@ static bool dump_memory(Bus *bus, const char *filename) {
     perror("Failed to open file for dumping memory");
     return false;
   }
-  size_t written = fwrite(bus->memory, 1, sizeof(bus->memory), file);
+  usize written = fwrite(bus->memory, 1, sizeof(bus->memory), file);
   fclose(file);
   if (written != sizeof(bus->memory)) {
     fprintf(stderr, "Failed to write memory dump\n");
@@ -595,15 +596,31 @@ static bool dump_memory(Bus *bus, const char *filename) {
   return true;
 }
 
-int main(void) {
+i32 main(i32 argc, char **argv) {
+
+  const char *program_file = NULL;
+  const char *dump_file = NULL;
+
+  if (argc == 2) {
+    program_file = argv[1];
+  } else if (argc == 4 && strcmp(argv[2], "-o") == 0) {
+    program_file = argv[1];
+    dump_file = argv[3];
+  } else {
+    fprintf(stderr, "Usage: %s <program_file> [-o <dump_file>]\n", argv[0]);
+    return 1;
+  }
+
+  printf("Loading program: %s\n", program_file);
+
   static Bus bus;
   CPU cpu;
 
   init_bus(&bus);
 
-  load_program_from_file(&bus, 0x0400, "../tests/test_prog.bin");
+  load_program_from_file(&bus, 0x0400, program_file);
 
-  // Set the reset vector to point to 0x0400
+  // Set the reset vector to poi32 to 0x0400
   static const u8 reset_vector[] = {0x00, 0x04};
   load_program(&bus, 0xFFFC, reset_vector, (usize)sizeof(reset_vector));
 
@@ -623,29 +640,30 @@ int main(void) {
   printf("P = 0x%02X\n", (unsigned)cpu.P);
 
   printf("--- ADC results ---\n");
-  for (int i = 0; i <= 8; ++i)
+  for (i32 i = 0; i <= 8; ++i)
     printf("  [0x030%X] = 0x%02X\n", i,
            (unsigned)bus.read(bus.self, 0x0300 + i));
 
   printf("--- SBC results ---\n");
-  for (int i = 0; i <= 8; ++i)
+  for (i32 i = 0; i <= 8; ++i)
     printf("  [0x031%X] = 0x%02X\n", i,
            (unsigned)bus.read(bus.self, 0x0310 + i));
 
   printf("--- CMP/CPX/CPY/Carry ---\n");
-  for (int i = 0; i <= 4; ++i)
+  for (i32 i = 0; i <= 4; ++i)
     printf("  [0x032%X] = 0x%02X\n", i,
            (unsigned)bus.read(bus.self, 0x0320 + i));
 
   printf("--- INC/DEC/INX/DEX/INY/DEY ---\n");
-  for (int i = 5; i <= 0xC; ++i)
+  for (i32 i = 5; i <= 0xC; ++i)
     printf("  [0x032%X] = 0x%02X\n", i,
            (unsigned)bus.read(bus.self, 0x0320 + i));
 
   printf("cycles = %llu\n", (unsigned long long)cpu.cycles);
 
-  // dump memory for inspecting
-  dump_memory(&bus, "mem_dump.bin");
+  if (dump_file) {
+    dump_memory(&bus, dump_file);
+  }
 
   return 0;
 }
