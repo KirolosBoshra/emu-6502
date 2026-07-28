@@ -200,5 +200,100 @@
   DEY              ; Y = $00, Z = 1
   STY $032C
 
+; ==== ORA tests ====
+
+; setup operands
+  LDA #$0F
+  STA $0070        ; $70 = $0F
+  LDA #$F0
+  STA $0071        ; $71 = $F0
+  LDA #$55
+  STA $0072        ; $72 = $55
+  LDA #$AA
+  STA $0380        ; $0380 = $AA
+  LDA #$55
+  STA $0381        ; $0381 = $55
+  LDA #$0F
+  STA $0382        ; $0382 = $0F
+  LDA #$80
+  STA $0080
+  LDA #$03
+  STA $0081        ; $80-$81 = $0380
+  LDA #$80
+  STA $0082
+  LDA #$03
+  STA $0083        ; $82-$83 = $0380
+
+; 1: ORA #$0F (immediate)
+  LDA #$F0
+  ORA #$0F         ; A = $FF
+  STA $0330
+
+; 2: ORA $70 (zero-page)
+  LDA #$00
+  ORA $70          ; A = $0F
+  STA $0331
+
+; 3: ORA $70,X (zero-page,X)
+  LDX #$01
+  LDA #$00
+  ORA $70,X        ; $71 = $F0 -> A = $F0
+  STA $0332
+
+; 4: ORA $0380 (absolute)
+  LDA #$00
+  ORA $0380        ; A = $AA
+  STA $0333
+
+; 5: ORA $0380,X (absolute,X)
+  LDX #$01
+  LDA #$00
+  ORA $0380,X      ; $0381 = $55 -> A = $55
+  STA $0334
+
+; 6: ORA $0380,Y (absolute,Y)
+  LDY #$02
+  LDA #$00
+  ORA $0380,Y      ; $0382 = $0F -> A = $0F
+  STA $0335
+
+; 7: ORA ($80,X) (indirect,X)
+  LDX #$00
+  LDA #$00
+  ORA ($80,X)      ; ($80) = $0380 -> $0380 = $AA -> A = $AA
+  STA $0336
+
+; 8: ORA ($82),Y (indirect),Y
+  LDY #$01
+  LDA #$00
+  ORA ($82),Y      ; ($82) = $0380; $0380+1 = $0381 = $55 -> A = $55
+  STA $0337
+
+; ==== PHA / PLA tests ====
+
+; 1: push and pull
+  LDA #$42
+  PHA              ; push $42
+  LDA #$00
+  PLA              ; A = $42
+  STA $0340        ; = $42
+
+; 2: N flag set on PLA
+  LDA #$80
+  PHA              ; push $80
+  LDA #$00
+  PLA              ; A = $80, N = 1
+  STA $0341        ; = $80
+
+; ==== PLP test ====
+
+  SEC
+  PHP              ; push P with C=1
+  CLC
+  PLP              ; restore P (C=1)
+  PHP              ; push P again
+  PLA              ; pull flags into A
+  STA $0350        ; should have C bit set
+
 ; ---- halt ----
   BRK
