@@ -1,7 +1,7 @@
 # emu-6502
 
-A minimal MOS 6502 CPU emulator in C.
-I wrote this in order to continue my journey of learning CPU architecture 
+A minimal MOS 6502 CPU emulator in C.</br> 
+I wrote this in order to continue my journey of learning CPU architecture,</br>
 I'm hoping to make it a full NES emulator eventually, but for now it's just a CPU emulator.
 
 ## Build
@@ -14,28 +14,34 @@ cmake --build build
 ## Run
 
 ```
-./build/emu6502
+emu6502.exe <program.bin> [-o mem_dump.bin]
 ```
 
-## API examples
+The `-o` flag writes a memory dump after execution.
 
-Load a byte array into memory:
+## Tests
+
+Assemble `tests/test_prog.asm` with `ca65`/`ld65`, run the emulator, and verify results at the expected memory addresses.
+
+## API
 
 ```c
-static const u8 program[] = {
-    0xA9, 0x42,       // LDA #$42
-    0x8D, 0x00, 0x03, // STA $0300
-    0x4C, 0xEF, 0xFF  // JMP $FFEF
-};
 load_program(&bus, 0x0200, program, sizeof(program));
-```
 
-Load a binary file into memory:
-
-```c
 load_program_from_file(&bus, 0x0200, "program.bin");
 ```
 
 ## Status
 
-Partial — implements LDA, STA, JMP, BRK, NOP. WIP.
+72/151 official opcodes implemented:
+
+- ORA, AND, EOR, ASL — all addressing modes
+- ADC, SBC — immediate, zero-page, absolute
+- LDA, STA, LDX, STX, LDY, STY — common modes
+- JMP (absolute, indirect), BRK, NOP
+- PHA, PHP, PLA, PLP
+- CMP, CPX, CPY — immediate
+- INC, DEC — zero-page
+- INX, DEX, INY, DEY
+- CLC, SEC, CLD, SED, CLI, SEI, CLV
+- BIT — zero-page, absolute
