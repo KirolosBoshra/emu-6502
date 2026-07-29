@@ -576,21 +576,135 @@ static void op_plp(CPU *cpu, Bus *bus, u8 opcode) {
   cpu->cycles += 4; // PLP takes 4 cycles
 }
 
+static void op_and_imm(CPU *cpu, Bus *bus, u8 opcode) {
+  (void)opcode;
+
+  u8 value = fetch8(cpu, bus);
+  cpu->A &= value;
+  cpu_update_zero_and_negative_flags(cpu, cpu->A);
+  cpu->cycles += 2;
+}
+
+static void op_and_zp(CPU *cpu, Bus *bus, u8 opcode) {
+  (void)opcode;
+
+  u8 addr = fetch8(cpu, bus);
+  u8 value = bus->read(bus->self, addr);
+  cpu->A &= value;
+  cpu_update_zero_and_negative_flags(cpu, cpu->A);
+  cpu->cycles += 3;
+}
+
+static void op_and_zpx(CPU *cpu, Bus *bus, u8 opcode) {
+  (void)opcode;
+
+  u8 addr = (fetch8(cpu, bus) + cpu->X) & 0xFF;
+  u8 value = bus->read(bus->self, addr);
+  cpu->A &= value;
+  cpu_update_zero_and_negative_flags(cpu, cpu->A);
+  cpu->cycles += 4;
+}
+
+static void op_and_abs(CPU *cpu, Bus *bus, u8 opcode) {
+  (void)opcode;
+
+  u16 addr = fetch16(cpu, bus);
+  u8 value = bus->read(bus->self, addr);
+  cpu->A &= value;
+  cpu_update_zero_and_negative_flags(cpu, cpu->A);
+  cpu->cycles += 4;
+}
+
+static void op_and_absx(CPU *cpu, Bus *bus, u8 opcode) {
+  (void)opcode;
+
+  u16 addr = fetch16(cpu, bus);
+  u8 value = bus->read(bus->self, addr + cpu->X);
+  cpu->A &= value;
+  cpu_update_zero_and_negative_flags(cpu, cpu->A);
+  cpu->cycles += 4 + page_cross(addr, cpu->X);
+}
+
+static void op_and_absy(CPU *cpu, Bus *bus, u8 opcode) {
+  (void)opcode;
+
+  u16 addr = fetch16(cpu, bus);
+  u8 value = bus->read(bus->self, addr + cpu->Y);
+  cpu->A &= value;
+  cpu_update_zero_and_negative_flags(cpu, cpu->A);
+  cpu->cycles += 4 + page_cross(addr, cpu->Y);
+}
+
+static void op_and_indx(CPU *cpu, Bus *bus, u8 opcode) {
+  (void)opcode;
+
+  u8 zpage = fetch8(cpu, bus);
+  u16 lo = bus->read(bus->self, (u8)(zpage + cpu->X));
+  u16 hi = bus->read(bus->self, (u8)(zpage + cpu->X + 1));
+  u16 addr = lo | (hi << 8);
+  cpu->A &= bus->read(bus->self, addr);
+  cpu_update_zero_and_negative_flags(cpu, cpu->A);
+  cpu->cycles += 6;
+}
+
+static void op_and_indy(CPU *cpu, Bus *bus, u8 opcode) {
+  (void)opcode;
+
+  u8 zpage = fetch8(cpu, bus);
+  u16 lo = bus->read(bus->self, zpage);
+  u16 hi = bus->read(bus->self, (u8)(zpage + 1));
+  u16 ptr = lo | (hi << 8);
+  u16 addr = ptr + cpu->Y;
+  cpu->A &= bus->read(bus->self, addr);
+  cpu_update_zero_and_negative_flags(cpu, cpu->A);
+  cpu->cycles += 5 + page_cross(ptr, cpu->Y);
+}
+
+static void op_bit_zp(CPU *cpu, Bus *bus, u8 opcode) {
+  (void)opcode;
+
+  u8 addr = fetch8(cpu, bus);
+  u8 value = bus->read(bus->self, addr);
+
+  cpu_set_flag(cpu, FLAG_Z, (cpu->A & value) == 0);
+  cpu_set_flag(cpu, FLAG_N, value & 0x80);
+  cpu_set_flag(cpu, FLAG_V, value & 0x40);
+
+  cpu->cycles += 3;
+}
+
+static void op_bit_abs(CPU *cpu, Bus *bus, u8 opcode) {
+  (void)opcode;
+
+  u16 addr = fetch16(cpu, bus);
+  u8 value = bus->read(bus->self, addr);
+
+  cpu_set_flag(cpu, FLAG_Z, (cpu->A & value) == 0);
+  cpu_set_flag(cpu, FLAG_N, value & 0x80);
+  cpu_set_flag(cpu, FLAG_V, value & 0x40);
+
+  cpu->cycles += 4;
+}
+
 static OpcodeHandler const opcode_table[256] = {
     [0x00] = op_brk,      [0x01] = op_ora_indx, [0x05] = op_ora_zp,
     [0x08] = op_php,      [0x09] = op_ora_imm,  [0x0D] = op_ora_abs,
     [0x11] = op_ora_indy, [0x15] = op_ora_zpx,  [0x18] = op_clc,
-    [0x19] = op_ora_absy, [0x1D] = op_ora_absx, [0x28] = op_plp,
-    [0x38] = op_sec,      [0x48] = op_pha,      [0x4C] = op_jmp_abs,
-    [0x65] = op_adc_zp,   [0x68] = op_pla,      [0x69] = op_adc_imm,
-    [0x6C] = op_jmp_ind,  [0x6D] = op_adc_abs,  [0x88] = op_dey,
-    [0x8C] = op_sty_abs,  [0x8D] = op_sta_abs,  [0x8E] = op_stx_abs,
-    [0xA0] = op_ldy_imm,  [0xA2] = op_ldx_imm,  [0xA4] = op_ldy_zp,
-    [0xA5] = op_lda_zp,   [0xA9] = op_lda_imm,  [0xB6] = op_ldx_zp,
-    [0xC0] = op_cpy_imm,  [0xC6] = op_dec_zp,   [0xC8] = op_iny,
-    [0xC9] = op_cmp_imm,  [0xCA] = op_dex,      [0xE0] = op_cpx_imm,
-    [0xE5] = op_sbc_zp,   [0xE6] = op_inc_zp,   [0xE8] = op_inx,
-    [0xE9] = op_sbc_imm,  [0xEA] = op_nop,      [0xED] = op_sbc_abs,
+    [0x19] = op_ora_absy, [0x1D] = op_ora_absx, [0x21] = op_and_indx,
+    [0x24] = op_bit_zp,   [0x25] = op_and_zp,   [0x28] = op_plp,
+    [0x29] = op_and_imm,  [0x2C] = op_bit_abs,  [0x2D] = op_and_abs,
+    [0x31] = op_and_indy, [0x35] = op_and_zpx,  [0x38] = op_sec,
+    [0x39] = op_and_absy, [0x3D] = op_and_absx, [0x48] = op_pha,
+    [0x4C] = op_jmp_abs,  [0x65] = op_adc_zp,   [0x68] = op_pla,
+    [0x69] = op_adc_imm,  [0x6C] = op_jmp_ind,  [0x6D] = op_adc_abs,
+    [0x88] = op_dey,      [0x8C] = op_sty_abs,  [0x8D] = op_sta_abs,
+    [0x8E] = op_stx_abs,  [0xA0] = op_ldy_imm,  [0xA2] = op_ldx_imm,
+    [0xA4] = op_ldy_zp,   [0xA5] = op_lda_zp,   [0xA9] = op_lda_imm,
+    [0xB6] = op_ldx_zp,   [0xC0] = op_cpy_imm,  [0xC6] = op_dec_zp,
+    [0xC8] = op_iny,      [0xC9] = op_cmp_imm,  [0xCA] = op_dex,
+    [0xE0] = op_cpx_imm,  [0xE5] = op_sbc_zp,   [0xE6] = op_inc_zp,
+    [0xE8] = op_inx,      [0xE9] = op_sbc_imm,  [0xEA] = op_nop,
+    [0xED] = op_sbc_abs,
 };
 
 void cpu_step(CPU *cpu, Bus *bus) {
@@ -745,47 +859,13 @@ i32 main(i32 argc, char **argv) {
     cpu_step(&cpu, &bus);
   }
 
-  // Print CPU state after execution
+  // <TMP> Print CPU state after execution
   printf("A = 0x%02X\n", (unsigned)cpu.A);
   printf("X = 0x%02X\n", (unsigned)cpu.X);
   printf("Y = 0x%02X\n", (unsigned)cpu.Y);
   printf("PC = 0x%04X\n", (unsigned)cpu.PC);
   printf("SP = 0x%02X\n", (unsigned)cpu.SP);
   printf("P = 0x%02X\n", (unsigned)cpu.P);
-
-  printf("--- ADC results ---\n");
-  for (i32 i = 0; i <= 8; ++i)
-    printf("  [0x030%X] = 0x%02X\n", i,
-           (unsigned)bus.read(bus.self, 0x0300 + i));
-
-  printf("--- SBC results ---\n");
-  for (i32 i = 0; i <= 8; ++i)
-    printf("  [0x031%X] = 0x%02X\n", i,
-           (unsigned)bus.read(bus.self, 0x0310 + i));
-
-  printf("--- CMP/CPX/CPY/Carry ---\n");
-  for (i32 i = 0; i <= 4; ++i)
-    printf("  [0x032%X] = 0x%02X\n", i,
-           (unsigned)bus.read(bus.self, 0x0320 + i));
-
-  printf("--- INC/DEC/INX/DEX/INY/DEY ---\n");
-  for (i32 i = 5; i <= 0xC; ++i)
-    printf("  [0x032%X] = 0x%02X\n", i,
-           (unsigned)bus.read(bus.self, 0x0320 + i));
-
-  printf("--- ORA results ---\n");
-  for (i32 i = 0; i <= 7; ++i)
-    printf("  [0x033%X] = 0x%02X\n", i,
-           (unsigned)bus.read(bus.self, 0x0330 + i));
-
-  printf("--- PHA/PLA ---\n");
-  for (i32 i = 0; i <= 1; ++i)
-    printf("  [0x034%X] = 0x%02X\n", i,
-           (unsigned)bus.read(bus.self, 0x0340 + i));
-
-  printf("--- PLP ---\n");
-  printf("  [0x0350] = 0x%02X\n",
-         (unsigned)bus.read(bus.self, 0x0350));
 
   printf("cycles = %llu\n", (unsigned long long)cpu.cycles);
 

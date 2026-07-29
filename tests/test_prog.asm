@@ -295,5 +295,87 @@
   PLA              ; pull flags into A
   STA $0350        ; should have C bit set
 
+; ==== AND tests ====
+
+; 1: AND #$0F (immediate)
+  LDA #$F0
+  AND #$0F         ; A = $00
+  STA $0360
+
+; 2: AND $70 (zero-page)
+  LDA #$FF
+  AND $70          ; A = $0F
+  STA $0361
+
+; 3: AND $70,X (zero-page,X)
+  LDX #$01
+  LDA #$FF
+  AND $70,X        ; $71 = $F0 -> A = $F0
+  STA $0362
+
+; 4: AND $0380 (absolute)
+  LDA #$FF
+  AND $0380        ; A = $AA
+  STA $0363
+
+; 5: AND $0380,X (absolute,X)
+  LDX #$01
+  LDA #$FF
+  AND $0380,X      ; $0381 = $55 -> A = $55
+  STA $0364
+
+; 6: AND $0380,Y (absolute,Y)
+  LDY #$02
+  LDA #$FF
+  AND $0380,Y      ; $0382 = $0F -> A = $0F
+  STA $0365
+
+; 7: AND ($80,X) (indirect,X)
+  LDX #$00
+  LDA #$FF
+  AND ($80,X)      ; ($80) = $0380 -> $0380 = $AA -> A = $AA
+  STA $0366
+
+; 8: AND ($82),Y (indirect),Y
+  LDY #$01
+  LDA #$FF
+  AND ($82),Y      ; ($82) = $0380; $0380+1 = $0381 = $55 -> A = $55
+  STA $0367
+
+; ==== BIT tests ====
+
+; setup BIT operands
+  LDA #$C0
+  STA $0090        ; $90 = $C0 (bits 7 & 6 set)
+  STA $0390        ; $0390 = $C0
+
+; 1: BIT $70 ($70=$0F), A=$00 -> Z=1
+  LDA #$00
+  BIT $70
+  PHP
+  PLA
+  STA $0370
+
+; 2: BIT $50 ($50=$80), A=$FF -> N=1
+  LDA #$FF
+  BIT $50
+  PHP
+  PLA
+  STA $0371
+
+; 3: BIT $0380 ($0380=$AA), A=$00 -> Z=1, N=1
+  LDA #$00
+  BIT $0380
+  PHP
+  PLA
+  STA $0372
+
+; 4: BIT $0390 ($0390=$C0), A=$FF -> N=1, V=1
+  LDA #$FF
+  BIT $0390
+  PHP
+  PLA
+  STA $0373
+
 ; ---- halt ----
   BRK
