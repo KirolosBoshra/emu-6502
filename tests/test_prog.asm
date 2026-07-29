@@ -377,5 +377,103 @@
   PLA
   STA $0373
 
+; ==== EOR tests ====
+
+; setup EOR operands
+  LDA #$0F
+  STA $0388        ; $0388 = $0F
+  LDA #$F0
+  STA $0389        ; $0389 = $F0
+  LDA #$55
+  STA $038A        ; $038A = $55
+  LDA #$AA
+  STA $038B        ; $038B = $AA
+  LDA #$88
+  STA $0084
+  LDA #$03
+  STA $0085        ; $84-$85 = $0388
+
+; 1: EOR #$0F (immediate)
+  LDA #$F0
+  EOR #$0F         ; A = $FF
+  STA $0398
+
+; 2: EOR $70 (zero-page)
+  LDA #$FF
+  EOR $70          ; A = $F0
+  STA $0399
+
+; 3: EOR $70,X (zero-page,X)
+  LDX #$01
+  LDA #$0F
+  EOR $70,X        ; A = $FF
+  STA $039A
+
+; 4: EOR $0388 (absolute)
+  LDA #$F0
+  EOR $0388        ; A = $FF
+  STA $039B
+
+; 5: EOR $0388,X (absolute,X)
+  LDX #$01
+  LDA #$0F
+  EOR $0388,X      ; A = $FF
+  STA $039C
+
+; 6: EOR $0388,Y (absolute,Y)
+  LDY #$02
+  LDA #$AA
+  EOR $0388,Y      ; A = $FF
+  STA $039D
+
+; 7: EOR ($84,X) (indirect,X)
+  LDX #$00
+  LDA #$FF
+  EOR ($84,X)      ; $0388 = $0F -> A = $F0
+  STA $039E
+
+; 8: EOR ($84),Y (indirect),Y
+  LDY #$01
+  LDA #$FF
+  EOR ($84),Y      ; $0389 = $F0 -> A = $0F
+  STA $039F
+
+; ==== ASL tests ====
+
+; 1: accumulator
+  LDA #$81
+  ASL A            ; A = $02, C = 1
+  STA $03A0
+
+; 2: zero-page (use $73)
+  LDA #$80
+  STA $0073        ; $73 = $80
+  ASL $73          ; $73 = $00, C = 1
+  LDA $73
+  STA $03A1
+
+; 3: zero-page,X (use $74)
+  LDA #$40
+  STA $0074        ; $74 = $40
+  LDX #$01
+  ASL $73,X        ; $73+1 = $74 -> $80, N = 1
+  LDA $74
+  STA $03A2
+
+; 4: absolute
+  LDA #$01
+  STA $03A8        ; $03A8 = $01
+  ASL $03A8        ; $03A8 = $02
+  LDA $03A8
+  STA $03A3
+
+; 5: absolute,X
+  LDA #$7F
+  STA $03A9        ; $03A9 = $7F
+  LDX #$01
+  ASL $03A8,X      ; $03A8+1 = $03A9 -> $FE, N = 1
+  LDA $03A9
+  STA $03A4
+
 ; ---- halt ----
   BRK
