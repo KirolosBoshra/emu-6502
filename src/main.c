@@ -28,6 +28,9 @@ typedef enum {
 typedef struct {
   u8 memory[1u << 16]; // 65536
 
+  bool nmi_pending;
+  bool irq_pending;
+
   u8 (*read)(void *self, u16 addr);
   void (*write)(void *self, u16 addr, u8 value);
 
@@ -86,6 +89,35 @@ static u16 fetch16(CPU *cpu, Bus *bus) {
 
   // Little Endian
   return lo | (hi << 8);
+}
+
+static void cpu_nmi(CPU *cpu, Bus *bus) {
+  bus->write(bus->self, 0x0100 + cpu->SP--, (cpu->PC >> 8) & 0xFF);
+  bus->write(bus->self, 0x0100 + cpu->SP--, cpu->PC & 0xFF);
+  bus->write(bus->self, 0x0100 + cpu->SP--, cpu->P & ~FLAG_B);
+
+  cpu_set_flag(cpu, FLAG_I, true);
+
+  u16 lo = bus->read(bus->self, 0xFFFA);
+  u16 hi = bus->read(bus->self, 0xFFFB);
+  cpu->PC = lo | (hi << 8);
+
+  cpu->cycles += 7;
+  bus->nmi_pending = false;
+}
+
+static void cpu_irq(CPU *cpu, Bus *bus) {
+  bus->write(bus->self, 0x0100 + cpu->SP--, (cpu->PC >> 8) & 0xFF);
+  bus->write(bus->self, 0x0100 + cpu->SP--, cpu->PC & 0xFF);
+  bus->write(bus->self, 0x0100 + cpu->SP--, cpu->P & ~FLAG_B);
+
+  cpu_set_flag(cpu, FLAG_I, true);
+  u16 lo = bus->read(bus->self, 0xFFFE);
+  u16 hi = bus->read(bus->self, 0xFFFF);
+  cpu->PC = lo | (hi << 8);
+
+  cpu->cycles += 7;
+  bus->irq_pending = false;
 }
 
 // Instruction Handlers
@@ -1085,6 +1117,12 @@ static OpcodeHandler const opcode_table[256] = {
 };
 
 void cpu_step(CPU *cpu, Bus *bus) {
+  if (bus->nmi_pending) {
+    cpu_nmi(cpu, bus);
+  } else if (bus->irq_pending && !(cpu->P & FLAG_I)) {
+    cpu_irq(cpu, bus);
+  }
+
   u8 opcode = fetch8(cpu, bus);
 
   OpcodeHandler handler = opcode_table[opcode];
@@ -1227,7 +1265,7 @@ i32 main(i32 argc, char **argv) {
 
   cpu_reset(&cpu, &bus);
 
-  // Execute the program until BRK is encountered (PC = 0x00)
+  // Execute the program until BRK is encountered (PC = 0x00) or hit cycle limit
   u64 max_cycles = cpu.cycles + 5000000;
   while (cpu.PC != 0x00 && cpu.cycles < max_cycles) {
     cpu_step(&cpu, &bus);
