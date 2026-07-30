@@ -57,10 +57,6 @@ static void cpu_set_flag(CPU *cpu, CPUFlag flag, bool condition) {
     cpu->P &= ~flag;
 }
 
-static bool cpu_get_flag(CPU *cpu, CPUFlag flag) {
-  return (cpu->P & flag) != 0;
-}
-
 static void cpu_update_zero_and_negative_flags(CPU *cpu, u8 value) {
   cpu_set_flag(cpu, FLAG_Z, value == 0);
   cpu_set_flag(cpu, FLAG_N, (value & 0x80) != 0);
@@ -264,95 +260,6 @@ static void op_php(CPU *cpu, Bus *bus, u8 opcode) {
   cpu->cycles += 3; // PHP takes 3 cycles
 }
 
-static void op_adc_imm(CPU *cpu, Bus *bus, u8 opcode) {
-  (void)opcode;
-
-  u8 value = fetch8(cpu, bus);
-  bool carry = cpu_get_flag(cpu, FLAG_C);
-
-  u16 result = (uint16_t)cpu->A + (uint16_t)value + (carry ? 1 : 0);
-  // Set carry and overflow flags
-  cpu_set_flag(cpu, FLAG_C, result > 0xFF);
-  cpu_set_flag(cpu, FLAG_V,
-               !((cpu->A ^ value) & 0x80) && ((cpu->A ^ result) & 0x80));
-  cpu->A = (uint8_t)(result & 0xFF);
-  cpu_update_zero_and_negative_flags(cpu, cpu->A);
-  cpu->cycles += 2;
-}
-
-static void op_adc_zp(CPU *cpu, Bus *bus, u8 opcode) {
-  (void)opcode;
-
-  u8 addr = fetch8(cpu, bus);
-  u8 value = bus->read(bus->self, addr);
-  bool carry = cpu_get_flag(cpu, FLAG_C);
-
-  u16 result = (u16)cpu->A + (u16)value + (carry ? 1 : 0);
-  // Set carry and overflow flags
-  cpu_set_flag(cpu, FLAG_C, result > 0xFF);
-  cpu_set_flag(cpu, FLAG_V,
-               !((cpu->A ^ value) & 0x80) && ((cpu->A ^ result) & 0x80));
-  cpu->A = (u8)(result & 0xFF);
-  cpu_update_zero_and_negative_flags(cpu, cpu->A);
-  cpu->cycles += 3;
-}
-
-static void op_adc_abs(CPU *cpu, Bus *bus, u8 opcode) {
-  (void)opcode;
-
-  u16 addr = fetch16(cpu, bus);
-  u8 value = bus->read(bus->self, addr);
-  u16 result = (u16)cpu->A + (u16)value + (u16)cpu_get_flag(cpu, FLAG_C);
-
-  // Set carry and overflow flags
-  cpu_set_flag(cpu, FLAG_C, result > 0xFF);
-  cpu_set_flag(cpu, FLAG_V,
-               (~(cpu->A ^ value) & (cpu->A ^ (u8)result) & 0x80) != 0);
-
-  cpu->A = (u8)result;
-
-  // Update flags
-  cpu_update_zero_and_negative_flags(cpu, cpu->A);
-
-  cpu->cycles += 4;
-}
-
-static void op_sbc_imm(CPU *cpu, Bus *bus, u8 opcode) {
-  (void)opcode;
-
-  u8 value = fetch8(cpu, bus);
-  bool carry = cpu_get_flag(cpu, FLAG_C);
-
-  u16 result = (uint16_t)cpu->A - (uint16_t)value - (carry ? 0 : 1);
-  // Set carry and overflow flags
-  cpu_set_flag(cpu, FLAG_C, result < 0x100);
-  cpu_set_flag(cpu, FLAG_V, ((cpu->A ^ result) & (cpu->A ^ value) & 0x80) != 0);
-  cpu->A = (uint8_t)(result & 0xFF);
-  cpu_update_zero_and_negative_flags(cpu, cpu->A);
-  cpu->cycles += 2;
-}
-
-static void op_sbc_abs(CPU *cpu, Bus *bus, u8 opcode) {
-  (void)opcode;
-
-  u16 addr = fetch16(cpu, bus);
-  u8 value = bus->read(bus->self, addr);
-  bool carry = cpu_get_flag(cpu, FLAG_C);
-  u16 result = (u16)cpu->A - (u16)value - (carry ? 0 : 1);
-
-  // Set carry and overflow flags
-  cpu_set_flag(cpu, FLAG_C, result < 0x100);
-  cpu_set_flag(cpu, FLAG_V,
-               ((cpu->A ^ value) & (cpu->A ^ (u8)result) & 0x80) != 0);
-
-  cpu->A = (u8)result;
-
-  // Update flags
-  cpu_update_zero_and_negative_flags(cpu, cpu->A);
-
-  cpu->cycles += 4;
-}
-
 // Flags
 static void op_clc(CPU *cpu, Bus *bus, u8 opcode) {
   (void)opcode;
@@ -408,23 +315,6 @@ static void op_sei(CPU *cpu, Bus *bus, u8 opcode) {
   cpu->cycles += 2;
 }
 
-static void op_sbc_zp(CPU *cpu, Bus *bus, u8 opcode) {
-  (void)opcode;
-
-  u8 addr = fetch8(cpu, bus);
-  u8 value = bus->read(bus->self, addr);
-  bool carry = cpu_get_flag(cpu, FLAG_C);
-
-  u16 result = (u16)cpu->A - (u16)value - (carry ? 0 : 1);
-  // Set carry and overflow flags
-  cpu_set_flag(cpu, FLAG_C, result < 0x100);
-  cpu_set_flag(cpu, FLAG_V,
-               ((cpu->A ^ value) & (cpu->A ^ (u8)result) & 0x80) != 0);
-  cpu->A = (u8)(result & 0xFF);
-  cpu_update_zero_and_negative_flags(cpu, cpu->A);
-  cpu->cycles += 3;
-}
-
 static void op_compare(CPU *cpu, u8 reg, u8 value) {
   u16 result = (u16)reg - (u16)value;
 
@@ -454,34 +344,6 @@ static void op_cpy_imm(CPU *cpu, Bus *bus, u8 opcode) {
   u8 value = fetch8(cpu, bus);
   op_compare(cpu, cpu->Y, value);
   cpu->cycles += 2;
-}
-
-static void op_inc_zp(CPU *cpu, Bus *bus, u8 opcode) {
-  (void)opcode;
-
-  u8 addr = fetch8(cpu, bus);
-  u8 value = bus->read(bus->self, addr);
-
-  value++;
-
-  bus->write(bus->self, addr, value);
-  cpu_update_zero_and_negative_flags(cpu, value);
-
-  cpu->cycles += 5;
-}
-
-static void op_dec_zp(CPU *cpu, Bus *bus, u8 opcode) {
-  (void)opcode;
-
-  u8 addr = fetch8(cpu, bus);
-  u8 value = bus->read(bus->self, addr);
-
-  value--;
-
-  bus->write(bus->self, addr, value);
-  cpu_update_zero_and_negative_flags(cpu, value);
-
-  cpu->cycles += 5;
 }
 
 static void op_inx(CPU *cpu, Bus *bus, u8 opcode) {
@@ -524,94 +386,6 @@ static void op_dey(CPU *cpu, Bus *bus, u8 opcode) {
   cpu->cycles += 2;
 }
 
-static int page_cross(u16 base, u8 index) {
-  return ((base & 0xFF00) != ((base + index) & 0xFF00)) ? 1 : 0;
-}
-
-static void op_ora_imm(CPU *cpu, Bus *bus, u8 opcode) {
-  (void)opcode;
-
-  u8 value = fetch8(cpu, bus);
-  cpu->A |= value;
-  cpu_update_zero_and_negative_flags(cpu, cpu->A);
-  cpu->cycles += 2;
-}
-
-static void op_ora_zp(CPU *cpu, Bus *bus, u8 opcode) {
-  (void)opcode;
-
-  u8 addr = fetch8(cpu, bus);
-  u8 value = bus->read(bus->self, addr);
-  cpu->A |= value;
-  cpu_update_zero_and_negative_flags(cpu, cpu->A);
-  cpu->cycles += 3;
-}
-
-static void op_ora_zpx(CPU *cpu, Bus *bus, u8 opcode) {
-  (void)opcode;
-
-  u8 addr = (fetch8(cpu, bus) + cpu->X) & 0xFF;
-  u8 value = bus->read(bus->self, addr);
-  cpu->A |= value;
-  cpu_update_zero_and_negative_flags(cpu, cpu->A);
-  cpu->cycles += 4;
-}
-
-static void op_ora_abs(CPU *cpu, Bus *bus, u8 opcode) {
-  (void)opcode;
-
-  u16 addr = fetch16(cpu, bus);
-  u8 value = bus->read(bus->self, addr);
-  cpu->A |= value;
-  cpu_update_zero_and_negative_flags(cpu, cpu->A);
-  cpu->cycles += 4;
-}
-
-static void op_ora_absx(CPU *cpu, Bus *bus, u8 opcode) {
-  (void)opcode;
-
-  u16 addr = fetch16(cpu, bus);
-  u8 value = bus->read(bus->self, addr + cpu->X);
-  cpu->A |= value;
-  cpu_update_zero_and_negative_flags(cpu, cpu->A);
-  cpu->cycles += 4 + page_cross(addr, cpu->X);
-}
-
-static void op_ora_absy(CPU *cpu, Bus *bus, u8 opcode) {
-  (void)opcode;
-
-  u16 addr = fetch16(cpu, bus);
-  u8 value = bus->read(bus->self, addr + cpu->Y);
-  cpu->A |= value;
-  cpu_update_zero_and_negative_flags(cpu, cpu->A);
-  cpu->cycles += 4 + page_cross(addr, cpu->Y);
-}
-
-static void op_ora_indx(CPU *cpu, Bus *bus, u8 opcode) {
-  (void)opcode;
-
-  u8 zpage = fetch8(cpu, bus);
-  u16 lo = bus->read(bus->self, (u8)(zpage + cpu->X));
-  u16 hi = bus->read(bus->self, (u8)(zpage + cpu->X + 1));
-  u16 addr = lo | (hi << 8);
-  cpu->A |= bus->read(bus->self, addr);
-  cpu_update_zero_and_negative_flags(cpu, cpu->A);
-  cpu->cycles += 6;
-}
-
-static void op_ora_indy(CPU *cpu, Bus *bus, u8 opcode) {
-  (void)opcode;
-
-  u8 zpage = fetch8(cpu, bus);
-  u16 lo = bus->read(bus->self, zpage);
-  u16 hi = bus->read(bus->self, (u8)(zpage + 1));
-  u16 ptr = lo | (hi << 8);
-  u16 addr = ptr + cpu->Y;
-  cpu->A |= bus->read(bus->self, addr);
-  cpu_update_zero_and_negative_flags(cpu, cpu->A);
-  cpu->cycles += 5 + page_cross(ptr, cpu->Y);
-}
-
 static void op_pha(CPU *cpu, Bus *bus, u8 opcode) {
   (void)opcode;
 
@@ -633,90 +407,6 @@ static void op_plp(CPU *cpu, Bus *bus, u8 opcode) {
 
   cpu->P = bus->read(bus->self, 0x0100 + ++cpu->SP);
   cpu->cycles += 4; // PLP takes 4 cycles
-}
-
-static void op_and_imm(CPU *cpu, Bus *bus, u8 opcode) {
-  (void)opcode;
-
-  u8 value = fetch8(cpu, bus);
-  cpu->A &= value;
-  cpu_update_zero_and_negative_flags(cpu, cpu->A);
-  cpu->cycles += 2;
-}
-
-static void op_and_zp(CPU *cpu, Bus *bus, u8 opcode) {
-  (void)opcode;
-
-  u8 addr = fetch8(cpu, bus);
-  u8 value = bus->read(bus->self, addr);
-  cpu->A &= value;
-  cpu_update_zero_and_negative_flags(cpu, cpu->A);
-  cpu->cycles += 3;
-}
-
-static void op_and_zpx(CPU *cpu, Bus *bus, u8 opcode) {
-  (void)opcode;
-
-  u8 addr = (fetch8(cpu, bus) + cpu->X) & 0xFF;
-  u8 value = bus->read(bus->self, addr);
-  cpu->A &= value;
-  cpu_update_zero_and_negative_flags(cpu, cpu->A);
-  cpu->cycles += 4;
-}
-
-static void op_and_abs(CPU *cpu, Bus *bus, u8 opcode) {
-  (void)opcode;
-
-  u16 addr = fetch16(cpu, bus);
-  u8 value = bus->read(bus->self, addr);
-  cpu->A &= value;
-  cpu_update_zero_and_negative_flags(cpu, cpu->A);
-  cpu->cycles += 4;
-}
-
-static void op_and_absx(CPU *cpu, Bus *bus, u8 opcode) {
-  (void)opcode;
-
-  u16 addr = fetch16(cpu, bus);
-  u8 value = bus->read(bus->self, addr + cpu->X);
-  cpu->A &= value;
-  cpu_update_zero_and_negative_flags(cpu, cpu->A);
-  cpu->cycles += 4 + page_cross(addr, cpu->X);
-}
-
-static void op_and_absy(CPU *cpu, Bus *bus, u8 opcode) {
-  (void)opcode;
-
-  u16 addr = fetch16(cpu, bus);
-  u8 value = bus->read(bus->self, addr + cpu->Y);
-  cpu->A &= value;
-  cpu_update_zero_and_negative_flags(cpu, cpu->A);
-  cpu->cycles += 4 + page_cross(addr, cpu->Y);
-}
-
-static void op_and_indx(CPU *cpu, Bus *bus, u8 opcode) {
-  (void)opcode;
-
-  u8 zpage = fetch8(cpu, bus);
-  u16 lo = bus->read(bus->self, (u8)(zpage + cpu->X));
-  u16 hi = bus->read(bus->self, (u8)(zpage + cpu->X + 1));
-  u16 addr = lo | (hi << 8);
-  cpu->A &= bus->read(bus->self, addr);
-  cpu_update_zero_and_negative_flags(cpu, cpu->A);
-  cpu->cycles += 6;
-}
-
-static void op_and_indy(CPU *cpu, Bus *bus, u8 opcode) {
-  (void)opcode;
-
-  u8 zpage = fetch8(cpu, bus);
-  u16 lo = bus->read(bus->self, zpage);
-  u16 hi = bus->read(bus->self, (u8)(zpage + 1));
-  u16 ptr = lo | (hi << 8);
-  u16 addr = ptr + cpu->Y;
-  cpu->A &= bus->read(bus->self, addr);
-  cpu_update_zero_and_negative_flags(cpu, cpu->A);
-  cpu->cycles += 5 + page_cross(ptr, cpu->Y);
 }
 
 static void op_bit_zp(CPU *cpu, Bus *bus, u8 opcode) {
@@ -745,178 +435,653 @@ static void op_bit_abs(CPU *cpu, Bus *bus, u8 opcode) {
   cpu->cycles += 4;
 }
 
-static void op_eor_imm(CPU *cpu, Bus *bus, u8 opcode) {
-  (void)opcode;
+static void op_branch(CPU *cpu, Bus *bus, u8 opcode) {
+  // bits [7:6] = flag (00=N,01=V,10=C,11=Z), bit 5 = polarity (0=clear,1=set)
+  static const u8 flag_bits[] = {FLAG_N, FLAG_V, FLAG_C, FLAG_Z};
+  u8 flag = flag_bits[(opcode >> 6) & 3];
+  u8 cond = (opcode >> 5) & 1;
+  i8 offset = (i8)fetch8(cpu, bus);
+  u8 is_set = cpu->P & flag;
 
-  u8 value = fetch8(cpu, bus);
-  cpu->A ^= value;
+  // Increment PC cycles if taken
+  if (cond ? is_set : !is_set) {
+    u16 addr = cpu->PC + offset;
+    cpu->cycles += 1;
+    if ((addr ^ cpu->PC) & 0xFF00)
+      cpu->cycles += 1;
+    cpu->PC = addr;
+  }
+
+  cpu->cycles += 2;
+}
+
+// Transfers
+
+static void op_tax(CPU *cpu, Bus *bus, u8 opcode) {
+  (void)bus;
+  (void)opcode;
+  cpu->X = cpu->A;
+  cpu_update_zero_and_negative_flags(cpu, cpu->X);
+  cpu->cycles += 2;
+}
+
+static void op_tay(CPU *cpu, Bus *bus, u8 opcode) {
+  (void)bus;
+  (void)opcode;
+  cpu->Y = cpu->A;
+  cpu_update_zero_and_negative_flags(cpu, cpu->Y);
+  cpu->cycles += 2;
+}
+
+static void op_tsx(CPU *cpu, Bus *bus, u8 opcode) {
+  (void)bus;
+  (void)opcode;
+  cpu->X = cpu->SP;
+  cpu_update_zero_and_negative_flags(cpu, cpu->X);
+  cpu->cycles += 2;
+}
+
+static void op_txa(CPU *cpu, Bus *bus, u8 opcode) {
+  (void)bus;
+  (void)opcode;
+  cpu->A = cpu->X;
   cpu_update_zero_and_negative_flags(cpu, cpu->A);
   cpu->cycles += 2;
 }
 
-static void op_eor_zp(CPU *cpu, Bus *bus, u8 opcode) {
+static void op_txs(CPU *cpu, Bus *bus, u8 opcode) {
+  (void)bus;
   (void)opcode;
-
-  u8 addr = fetch8(cpu, bus);
-  u8 value = bus->read(bus->self, addr);
-  cpu->A ^= value;
-  cpu_update_zero_and_negative_flags(cpu, cpu->A);
-  cpu->cycles += 3;
+  cpu->SP = cpu->X;
+  cpu->cycles += 2;
 }
 
-static void op_eor_zpx(CPU *cpu, Bus *bus, u8 opcode) {
+static void op_tya(CPU *cpu, Bus *bus, u8 opcode) {
+  (void)bus;
   (void)opcode;
-
-  u8 addr = (fetch8(cpu, bus) + cpu->X) & 0xFF;
-  u8 value = bus->read(bus->self, addr);
-  cpu->A ^= value;
+  cpu->A = cpu->Y;
   cpu_update_zero_and_negative_flags(cpu, cpu->A);
-  cpu->cycles += 4;
+  cpu->cycles += 2;
 }
 
-static void op_eor_abs(CPU *cpu, Bus *bus, u8 opcode) {
-  (void)opcode;
+// Stack
 
+static void op_jsr(CPU *cpu, Bus *bus, u8 opcode) {
+  (void)opcode;
   u16 addr = fetch16(cpu, bus);
-  u8 value = bus->read(bus->self, addr);
-  cpu->A ^= value;
-  cpu_update_zero_and_negative_flags(cpu, cpu->A);
-  cpu->cycles += 4;
-}
-
-static void op_eor_absx(CPU *cpu, Bus *bus, u8 opcode) {
-  (void)opcode;
-
-  u16 addr = fetch16(cpu, bus);
-  u8 value = bus->read(bus->self, addr + cpu->X);
-  cpu->A ^= value;
-  cpu_update_zero_and_negative_flags(cpu, cpu->A);
-  cpu->cycles += 4 + page_cross(addr, cpu->X);
-}
-
-static void op_eor_absy(CPU *cpu, Bus *bus, u8 opcode) {
-  (void)opcode;
-
-  u16 addr = fetch16(cpu, bus);
-  u8 value = bus->read(bus->self, addr + cpu->Y);
-  cpu->A ^= value;
-  cpu_update_zero_and_negative_flags(cpu, cpu->A);
-  cpu->cycles += 4 + page_cross(addr, cpu->Y);
-}
-
-static void op_eor_indx(CPU *cpu, Bus *bus, u8 opcode) {
-  (void)opcode;
-
-  u8 zpage = fetch8(cpu, bus);
-  u16 lo = bus->read(bus->self, (u8)(zpage + cpu->X));
-  u16 hi = bus->read(bus->self, (u8)(zpage + cpu->X + 1));
-  u16 addr = lo | (hi << 8);
-  cpu->A ^= bus->read(bus->self, addr);
-  cpu_update_zero_and_negative_flags(cpu, cpu->A);
+  u16 ret = cpu->PC - 1;
+  bus->write(bus->self, 0x100 | cpu->SP, ret >> 8);
+  cpu->SP--;
+  bus->write(bus->self, 0x100 | cpu->SP, ret & 0xFF);
+  cpu->SP--;
+  cpu->PC = addr;
   cpu->cycles += 6;
 }
 
-static void op_eor_indy(CPU *cpu, Bus *bus, u8 opcode) {
+static void op_rts(CPU *cpu, Bus *bus, u8 opcode) {
   (void)opcode;
-
-  u8 zpage = fetch8(cpu, bus);
-  u16 lo = bus->read(bus->self, zpage);
-  u16 hi = bus->read(bus->self, (u8)(zpage + 1));
-  u16 ptr = lo | (hi << 8);
-  u16 addr = ptr + cpu->Y;
-  cpu->A ^= bus->read(bus->self, addr);
-  cpu_update_zero_and_negative_flags(cpu, cpu->A);
-  cpu->cycles += 5 + page_cross(ptr, cpu->Y);
+  cpu->SP++;
+  u16 lo = bus->read(bus->self, 0x100 | cpu->SP);
+  cpu->SP++;
+  u16 hi = bus->read(bus->self, 0x100 | cpu->SP);
+  cpu->PC = (hi << 8) | lo;
+  cpu->PC++;
+  cpu->cycles += 6;
 }
 
-static void op_asl_acc(CPU *cpu, Bus *bus, u8 opcode) {
+static void op_rti(CPU *cpu, Bus *bus, u8 opcode) {
   (void)opcode;
-  (void)bus;
-
-  cpu_set_flag(cpu, FLAG_C, cpu->A & 0x80);
-  cpu->A <<= 1;
-  cpu_update_zero_and_negative_flags(cpu, cpu->A);
-
-  cpu->cycles += 2;
+  cpu->SP++;
+  cpu->P = bus->read(bus->self, 0x100 | cpu->SP);
+  cpu->P |= FLAG_U;
+  cpu->SP++;
+  u16 lo = bus->read(bus->self, 0x100 | cpu->SP);
+  cpu->SP++;
+  u16 hi = bus->read(bus->self, 0x100 | cpu->SP);
+  cpu->PC = (hi << 8) | lo;
+  cpu->cycles += 6;
 }
 
-static void op_asl_zp(CPU *cpu, Bus *bus, u8 opcode) {
+// STA remaining modes
+
+static void op_sta_zpx(CPU *cpu, Bus *bus, u8 opcode) {
   (void)opcode;
+  bus->write(bus->self, (fetch8(cpu, bus) + cpu->X) & 0xFF, cpu->A);
+  cpu->cycles += 4;
+}
 
-  u8 addr = fetch8(cpu, bus);
-  u8 value = bus->read(bus->self, addr);
-  cpu_set_flag(cpu, FLAG_C, value & 0x80);
-  value <<= 1;
-  bus->write(bus->self, addr, value);
-  cpu_update_zero_and_negative_flags(cpu, value);
-
+static void op_sta_absx(CPU *cpu, Bus *bus, u8 opcode) {
+  (void)opcode;
+  bus->write(bus->self, fetch16(cpu, bus) + cpu->X, cpu->A);
   cpu->cycles += 5;
 }
 
-static void op_asl_zpx(CPU *cpu, Bus *bus, u8 opcode) {
+static void op_sta_absy(CPU *cpu, Bus *bus, u8 opcode) {
   (void)opcode;
+  bus->write(bus->self, fetch16(cpu, bus) + cpu->Y, cpu->A);
+  cpu->cycles += 5;
+}
 
+static void op_sta_indx(CPU *cpu, Bus *bus, u8 opcode) {
+  (void)opcode;
+  u8 zaddr = fetch8(cpu, bus) + cpu->X;
+  u16 addr = bus->read(bus->self, zaddr) |
+             (bus->read(bus->self, (u8)(zaddr + 1)) << 8);
+  bus->write(bus->self, addr, cpu->A);
+  cpu->cycles += 6;
+}
+
+static void op_sta_indy(CPU *cpu, Bus *bus, u8 opcode) {
+  (void)opcode;
+  u8 zaddr = fetch8(cpu, bus);
+  u16 addr = (bus->read(bus->self, zaddr) |
+              (bus->read(bus->self, (u8)(zaddr + 1)) << 8)) +
+             cpu->Y;
+  bus->write(bus->self, addr, cpu->A);
+  cpu->cycles += 6;
+}
+
+// STX remaining modes
+
+static void op_stx_zp(CPU *cpu, Bus *bus, u8 opcode) {
+  (void)opcode;
+  bus->write(bus->self, fetch8(cpu, bus), cpu->X);
+  cpu->cycles += 3;
+}
+
+static void op_stx_zpy(CPU *cpu, Bus *bus, u8 opcode) {
+  (void)opcode;
+  bus->write(bus->self, (fetch8(cpu, bus) + cpu->Y) & 0xFF, cpu->X);
+  cpu->cycles += 4;
+}
+
+// STY remaining modes
+
+static void op_sty_zp(CPU *cpu, Bus *bus, u8 opcode) {
+  (void)opcode;
+  bus->write(bus->self, fetch8(cpu, bus), cpu->Y);
+  cpu->cycles += 3;
+}
+
+static void op_sty_zpx(CPU *cpu, Bus *bus, u8 opcode) {
+  (void)opcode;
+  bus->write(bus->self, (fetch8(cpu, bus) + cpu->X) & 0xFF, cpu->Y);
+  cpu->cycles += 4;
+}
+
+// LDA remaining modes
+
+static void op_lda_zpx(CPU *cpu, Bus *bus, u8 opcode) {
+  (void)opcode;
+  u8 addr = (fetch8(cpu, bus) + cpu->X) & 0xFF;
+  cpu->A = bus->read(bus->self, addr);
+  cpu_update_zero_and_negative_flags(cpu, cpu->A);
+  cpu->cycles += 4;
+}
+
+static void op_lda_absx(CPU *cpu, Bus *bus, u8 opcode) {
+  (void)opcode;
+  u16 addr = fetch16(cpu, bus);
+  u16 ea = addr + cpu->X;
+  cpu->A = bus->read(bus->self, ea);
+  if ((ea & 0xFF00) != (addr & 0xFF00))
+    cpu->cycles++;
+  cpu_update_zero_and_negative_flags(cpu, cpu->A);
+  cpu->cycles += 4;
+}
+
+static void op_lda_absy(CPU *cpu, Bus *bus, u8 opcode) {
+  (void)opcode;
+  u16 addr = fetch16(cpu, bus);
+  u16 ea = addr + cpu->Y;
+  cpu->A = bus->read(bus->self, ea);
+  if ((ea & 0xFF00) != (addr & 0xFF00))
+    cpu->cycles++;
+  cpu_update_zero_and_negative_flags(cpu, cpu->A);
+  cpu->cycles += 4;
+}
+
+static void op_lda_indx(CPU *cpu, Bus *bus, u8 opcode) {
+  (void)opcode;
+  u8 zaddr = fetch8(cpu, bus) + cpu->X;
+  u16 addr = bus->read(bus->self, zaddr) |
+             (bus->read(bus->self, (u8)(zaddr + 1)) << 8);
+  cpu->A = bus->read(bus->self, addr);
+  cpu_update_zero_and_negative_flags(cpu, cpu->A);
+  cpu->cycles += 6;
+}
+
+static void op_lda_indy(CPU *cpu, Bus *bus, u8 opcode) {
+  (void)opcode;
+  u8 zaddr = fetch8(cpu, bus);
+  u16 base = bus->read(bus->self, zaddr) |
+             (bus->read(bus->self, (u8)(zaddr + 1)) << 8);
+  u16 addr = base + cpu->Y;
+  cpu->A = bus->read(bus->self, addr);
+  if ((addr & 0xFF00) != (base & 0xFF00))
+    cpu->cycles++;
+  cpu_update_zero_and_negative_flags(cpu, cpu->A);
+  cpu->cycles += 5;
+}
+
+static void op_ldx_abs(CPU *cpu, Bus *bus, u8 opcode) {
+  (void)opcode;
+  cpu->X = bus->read(bus->self, fetch16(cpu, bus));
+  cpu_update_zero_and_negative_flags(cpu, cpu->X);
+  cpu->cycles += 4;
+}
+
+static void op_ldx_absy(CPU *cpu, Bus *bus, u8 opcode) {
+  (void)opcode;
+  u16 addr = fetch16(cpu, bus);
+  u16 ea = addr + cpu->Y;
+  cpu->X = bus->read(bus->self, ea);
+  if ((ea & 0xFF00) != (addr & 0xFF00))
+    cpu->cycles++;
+  cpu_update_zero_and_negative_flags(cpu, cpu->X);
+  cpu->cycles += 4;
+}
+
+// LDY remaining modes
+
+static void op_ldy_abs(CPU *cpu, Bus *bus, u8 opcode) {
+  (void)opcode;
+  cpu->Y = bus->read(bus->self, fetch16(cpu, bus));
+  cpu_update_zero_and_negative_flags(cpu, cpu->Y);
+  cpu->cycles += 4;
+}
+
+static void op_ldy_zpx(CPU *cpu, Bus *bus, u8 opcode) {
+  (void)opcode;
+  u8 addr = (fetch8(cpu, bus) + cpu->X) & 0xFF;
+  cpu->Y = bus->read(bus->self, addr);
+  cpu_update_zero_and_negative_flags(cpu, cpu->Y);
+  cpu->cycles += 4;
+}
+
+static void op_ldy_absx(CPU *cpu, Bus *bus, u8 opcode) {
+  (void)opcode;
+  u16 addr = fetch16(cpu, bus);
+  u16 ea = addr + cpu->X;
+  cpu->Y = bus->read(bus->self, ea);
+  if ((ea & 0xFF00) != (addr & 0xFF00))
+    cpu->cycles++;
+  cpu_update_zero_and_negative_flags(cpu, cpu->Y);
+  cpu->cycles += 4;
+}
+
+// CMP remaining modes
+
+static void op_cmp_zp(CPU *cpu, Bus *bus, u8 opcode) {
+  (void)opcode;
+  u8 value = bus->read(bus->self, fetch8(cpu, bus));
+  op_compare(cpu, cpu->A, value);
+  cpu->cycles += 3;
+}
+
+static void op_cmp_abs(CPU *cpu, Bus *bus, u8 opcode) {
+  (void)opcode;
+  u8 value = bus->read(bus->self, fetch16(cpu, bus));
+  op_compare(cpu, cpu->A, value);
+  cpu->cycles += 4;
+}
+
+static void op_cmp_indx(CPU *cpu, Bus *bus, u8 opcode) {
+  (void)opcode;
+  u8 zaddr = fetch8(cpu, bus) + cpu->X;
+  u16 addr = bus->read(bus->self, zaddr) |
+             (bus->read(bus->self, (u8)(zaddr + 1)) << 8);
+  u8 value = bus->read(bus->self, addr);
+  op_compare(cpu, cpu->A, value);
+  cpu->cycles += 6;
+}
+
+static void op_cmp_indy(CPU *cpu, Bus *bus, u8 opcode) {
+  (void)opcode;
+  u8 zaddr = fetch8(cpu, bus);
+  u16 base = bus->read(bus->self, zaddr) |
+             (bus->read(bus->self, (u8)(zaddr + 1)) << 8);
+  u16 addr = base + cpu->Y;
+  u8 value = bus->read(bus->self, addr);
+  if ((addr & 0xFF00) != (base & 0xFF00))
+    cpu->cycles++;
+  op_compare(cpu, cpu->A, value);
+  cpu->cycles += 5;
+}
+
+static void op_cmp_zpx(CPU *cpu, Bus *bus, u8 opcode) {
+  (void)opcode;
   u8 addr = (fetch8(cpu, bus) + cpu->X) & 0xFF;
   u8 value = bus->read(bus->self, addr);
-  cpu_set_flag(cpu, FLAG_C, value & 0x80);
-  value <<= 1;
-  bus->write(bus->self, addr, value);
-  cpu_update_zero_and_negative_flags(cpu, value);
-
-  cpu->cycles += 6;
+  op_compare(cpu, cpu->A, value);
+  cpu->cycles += 4;
 }
 
-static void op_asl_abs(CPU *cpu, Bus *bus, u8 opcode) {
+static void op_cmp_absy(CPU *cpu, Bus *bus, u8 opcode) {
   (void)opcode;
-
   u16 addr = fetch16(cpu, bus);
-  u8 value = bus->read(bus->self, addr);
-  cpu_set_flag(cpu, FLAG_C, value & 0x80);
-  value <<= 1;
-  bus->write(bus->self, addr, value);
-  cpu_update_zero_and_negative_flags(cpu, value);
-
-  cpu->cycles += 6;
+  u16 ea = addr + cpu->Y;
+  u8 value = bus->read(bus->self, ea);
+  if ((ea & 0xFF00) != (addr & 0xFF00))
+    cpu->cycles++;
+  op_compare(cpu, cpu->A, value);
+  cpu->cycles += 4;
 }
 
-static void op_asl_absx(CPU *cpu, Bus *bus, u8 opcode) {
+static void op_cmp_absx(CPU *cpu, Bus *bus, u8 opcode) {
   (void)opcode;
-
   u16 addr = fetch16(cpu, bus);
-  u8 value = bus->read(bus->self, addr + cpu->X);
-  cpu_set_flag(cpu, FLAG_C, value & 0x80);
-  value <<= 1;
-  bus->write(bus->self, addr + cpu->X, value);
-  cpu_update_zero_and_negative_flags(cpu, value);
+  u16 ea = addr + cpu->X;
+  u8 value = bus->read(bus->self, ea);
+  if ((ea & 0xFF00) != (addr & 0xFF00))
+    cpu->cycles++;
+  op_compare(cpu, cpu->A, value);
+  cpu->cycles += 4;
+}
 
-  cpu->cycles += 7;
+// CPX remaining modes
+
+static void op_cpx_zp(CPU *cpu, Bus *bus, u8 opcode) {
+  (void)opcode;
+  u8 value = bus->read(bus->self, fetch8(cpu, bus));
+  op_compare(cpu, cpu->X, value);
+  cpu->cycles += 3;
+}
+
+static void op_cpx_abs(CPU *cpu, Bus *bus, u8 opcode) {
+  (void)opcode;
+  u8 value = bus->read(bus->self, fetch16(cpu, bus));
+  op_compare(cpu, cpu->X, value);
+  cpu->cycles += 4;
+}
+
+// CPY remaining modes
+
+static void op_cpy_zp(CPU *cpu, Bus *bus, u8 opcode) {
+  (void)opcode;
+  u8 value = bus->read(bus->self, fetch8(cpu, bus));
+  op_compare(cpu, cpu->Y, value);
+  cpu->cycles += 3;
+}
+
+static void op_cpy_abs(CPU *cpu, Bus *bus, u8 opcode) {
+  (void)opcode;
+  u8 value = bus->read(bus->self, fetch16(cpu, bus));
+  op_compare(cpu, cpu->Y, value);
+  cpu->cycles += 4;
+}
+
+// Shared opcode-group handlers
+
+static void op_rmw(CPU *cpu, Bus *bus, u8 opcode) {
+  u8 value;
+  u16 addr = 0;
+  u8 cycles;
+
+  if ((opcode & 0x0F) == 0x0A) {
+    value = cpu->A;
+    cycles = 2;
+  } else {
+    u8 idx = (opcode >> 4) & 1;
+    if ((opcode & 0x0F) == 0x06) {
+      addr = (fetch8(cpu, bus) + (idx ? cpu->X : 0)) & 0xFF;
+      cycles = 5 + idx;
+    } else {
+      addr = fetch16(cpu, bus) + (idx ? cpu->X : 0);
+      cycles = 6 + idx;
+    }
+    value = bus->read(bus->self, addr);
+  }
+
+  switch ((opcode >> 5) & 7) {
+  case 0:
+    cpu_set_flag(cpu, FLAG_C, value & 0x80);
+    value <<= 1;
+    break;
+  case 1: {
+    u8 c = value >> 7;
+    value = (value << 1) | (cpu->P & FLAG_C);
+    cpu_set_flag(cpu, FLAG_C, c);
+    break;
+  }
+  case 2:
+    cpu_set_flag(cpu, FLAG_C, value & 1);
+    value >>= 1;
+    break;
+  case 3: {
+    u8 c = value & 1;
+    value = (value >> 1) | (cpu->P & FLAG_C ? 0x80 : 0);
+    cpu_set_flag(cpu, FLAG_C, c);
+    break;
+  }
+  case 6:
+    value--;
+    break;
+  case 7:
+    value++;
+    break;
+  }
+
+  if ((opcode & 0x0F) == 0x0A)
+    cpu->A = value;
+  else
+    bus->write(bus->self, addr, value);
+
+  cpu_update_zero_and_negative_flags(cpu, value);
+  cpu->cycles += cycles;
+}
+
+static void op_logic(CPU *cpu, Bus *bus, u8 opcode) {
+  u8 value;
+  u8 cycles;
+
+  switch (opcode & 0x1F) {
+  case 0x01: {
+    u8 zpage = fetch8(cpu, bus) + cpu->X;
+    value =
+        bus->read(bus->self, bus->read(bus->self, zpage) |
+                                 (bus->read(bus->self, (u8)(zpage + 1)) << 8));
+    cycles = 6;
+    break;
+  }
+  case 0x11: {
+    u8 zpage = fetch8(cpu, bus);
+    u16 base = bus->read(bus->self, zpage) |
+               (bus->read(bus->self, (u8)(zpage + 1)) << 8);
+    u16 ea = base + cpu->Y;
+    value = bus->read(bus->self, ea);
+    cycles = 5 + ((ea ^ base) >> 8);
+    break;
+  }
+  case 0x09:
+    value = fetch8(cpu, bus);
+    cycles = 2;
+    break;
+  case 0x05:
+    value = bus->read(bus->self, fetch8(cpu, bus));
+    cycles = 3;
+    break;
+  case 0x15:
+    value = bus->read(bus->self, (fetch8(cpu, bus) + cpu->X) & 0xFF);
+    cycles = 4;
+    break;
+  case 0x0D:
+    value = bus->read(bus->self, fetch16(cpu, bus));
+    cycles = 4;
+    break;
+  case 0x1D: {
+    u16 ba = fetch16(cpu, bus);
+    u16 ea = ba + cpu->X;
+    value = bus->read(bus->self, ea);
+    cycles = 4 + ((ea ^ ba) >> 8);
+    break;
+  }
+  case 0x19: {
+    u16 ba = fetch16(cpu, bus);
+    u16 ea = ba + cpu->Y;
+    value = bus->read(bus->self, ea);
+    cycles = 4 + ((ea ^ ba) >> 8);
+    break;
+  }
+  default: {
+    u8 zpage = fetch8(cpu, bus);
+    u16 base = bus->read(bus->self, zpage) |
+               (bus->read(bus->self, (u8)(zpage + 1)) << 8);
+    u16 ea = base + cpu->Y;
+    value = bus->read(bus->self, ea);
+    cycles = 5 + ((ea ^ base) >> 8);
+    break;
+  }
+  }
+
+  switch ((opcode >> 5) & 3) {
+  case 0:
+    cpu->A |= value;
+    break;
+  case 1:
+    cpu->A &= value;
+    break;
+  case 2:
+    cpu->A ^= value;
+    break;
+  }
+  cpu_update_zero_and_negative_flags(cpu, cpu->A);
+  cpu->cycles += cycles;
+}
+
+static void op_adc_sbc(CPU *cpu, Bus *bus, u8 opcode) {
+  u8 value;
+  u8 cycles;
+
+  switch (opcode & 0x1F) {
+  case 0x01: {
+    u8 zpage = fetch8(cpu, bus) + cpu->X;
+    value =
+        bus->read(bus->self, bus->read(bus->self, zpage) |
+                                 (bus->read(bus->self, (u8)(zpage + 1)) << 8));
+    cycles = 6;
+    break;
+  }
+  case 0x11: {
+    u8 zpage = fetch8(cpu, bus);
+    u16 base = bus->read(bus->self, zpage) |
+               (bus->read(bus->self, (u8)(zpage + 1)) << 8);
+    u16 ea = base + cpu->Y;
+    value = bus->read(bus->self, ea);
+    cycles = 5 + ((ea ^ base) >> 8);
+    break;
+  }
+  case 0x09:
+    value = fetch8(cpu, bus);
+    cycles = 2;
+    break;
+  case 0x05:
+    value = bus->read(bus->self, fetch8(cpu, bus));
+    cycles = 3;
+    break;
+  case 0x15:
+    value = bus->read(bus->self, (fetch8(cpu, bus) + cpu->X) & 0xFF);
+    cycles = 4;
+    break;
+  case 0x0D:
+    value = bus->read(bus->self, fetch16(cpu, bus));
+    cycles = 4;
+    break;
+  case 0x1D: {
+    u16 ba = fetch16(cpu, bus);
+    u16 ea = ba + cpu->X;
+    value = bus->read(bus->self, ea);
+    cycles = 4 + ((ea ^ ba) >> 8);
+    break;
+  }
+  case 0x19: {
+    u16 ba = fetch16(cpu, bus);
+    u16 ea = ba + cpu->Y;
+    value = bus->read(bus->self, ea);
+    cycles = 4 + ((ea ^ ba) >> 8);
+    break;
+  }
+  default: {
+    u8 zpage = fetch8(cpu, bus);
+    u16 base = bus->read(bus->self, zpage) |
+               (bus->read(bus->self, (u8)(zpage + 1)) << 8);
+    u16 ea = base + cpu->Y;
+    value = bus->read(bus->self, ea);
+    cycles = 5 + ((ea ^ base) >> 8);
+    break;
+  }
+  }
+
+  if (!(opcode & 0x80)) {
+    u16 result = (u16)cpu->A + (u16)value + (u16)(cpu->P & FLAG_C);
+    cpu_set_flag(cpu, FLAG_C, result > 0xFF);
+    cpu_set_flag(cpu, FLAG_V,
+                 (u8)(~(cpu->A ^ value) & (cpu->A ^ (u8)result) & 0x80));
+    cpu->A = (u8)result;
+  } else {
+    u16 borrow = (cpu->P & FLAG_C) ? 0 : 1;
+    u16 diff = (u16)cpu->A - (u16)value - borrow;
+    cpu_set_flag(cpu, FLAG_C, diff < 0x100);
+    cpu_set_flag(cpu, FLAG_V,
+                 (u8)((cpu->A ^ value) & (cpu->A ^ (u8)diff) & 0x80));
+    cpu->A = (u8)diff;
+  }
+  cpu_update_zero_and_negative_flags(cpu, cpu->A);
+  cpu->cycles += cycles;
 }
 
 static OpcodeHandler const opcode_table[256] = {
-    [0x00] = op_brk,      [0x01] = op_ora_indx, [0x05] = op_ora_zp,
-    [0x06] = op_asl_zp,   [0x08] = op_php,      [0x09] = op_ora_imm,
-    [0x0A] = op_asl_acc,  [0x0D] = op_ora_abs,  [0x0E] = op_asl_abs,
-    [0x11] = op_ora_indy, [0x15] = op_ora_zpx,  [0x16] = op_asl_zpx,
-    [0x18] = op_clc,      [0x19] = op_ora_absy, [0x1D] = op_ora_absx,
-    [0x1E] = op_asl_absx, [0x21] = op_and_indx, [0x24] = op_bit_zp,
-    [0x25] = op_and_zp,   [0x28] = op_plp,      [0x29] = op_and_imm,
-    [0x2C] = op_bit_abs,  [0x2D] = op_and_abs,  [0x31] = op_and_indy,
-    [0x35] = op_and_zpx,  [0x38] = op_sec,      [0x39] = op_and_absy,
-    [0x3D] = op_and_absx, [0x41] = op_eor_indx, [0x45] = op_eor_zp,
-    [0x48] = op_pha,      [0x49] = op_eor_imm,  [0x4C] = op_jmp_abs,
-    [0x4D] = op_eor_abs,  [0x51] = op_eor_indy, [0x55] = op_eor_zpx,
-    [0x58] = op_cli,      [0x59] = op_eor_absy, [0x5D] = op_eor_absx,
-    [0x65] = op_adc_zp,   [0x68] = op_pla,      [0x69] = op_adc_imm,
-    [0x6C] = op_jmp_ind,  [0x6D] = op_adc_abs,  [0x78] = op_sei,
-    [0x85] = op_sta_zp,   [0x88] = op_dey,      [0x8C] = op_sty_abs,
-    [0x8D] = op_sta_abs,  [0x8E] = op_stx_abs,  [0xA0] = op_ldy_imm,
-    [0xA2] = op_ldx_imm,  [0xA4] = op_ldy_zp,   [0xA5] = op_lda_zp,
-    [0xA9] = op_lda_imm,  [0xAD] = op_lda_abs,  [0xB6] = op_ldx_zp,
-    [0xB8] = op_clv,      [0xC0] = op_cpy_imm,  [0xC6] = op_dec_zp,
-    [0xC8] = op_iny,      [0xC9] = op_cmp_imm,  [0xCA] = op_dex,
-    [0xD8] = op_cld,      [0xE0] = op_cpx_imm,  [0xE5] = op_sbc_zp,
-    [0xE6] = op_inc_zp,   [0xE8] = op_inx,      [0xE9] = op_sbc_imm,
-    [0xEA] = op_nop,      [0xED] = op_sbc_abs,  [0xF8] = op_sed,
+    [0x00] = op_brk,      [0x01] = op_logic,    [0x05] = op_logic,
+    [0x06] = op_rmw,      [0x08] = op_php,      [0x09] = op_logic,
+    [0x0A] = op_rmw,      [0x0D] = op_logic,    [0x0E] = op_rmw,
+    [0x10] = op_branch,   [0x11] = op_logic,    [0x15] = op_logic,
+    [0x16] = op_rmw,      [0x18] = op_clc,      [0x19] = op_logic,
+    [0x1D] = op_logic,    [0x1E] = op_rmw,      [0x20] = op_jsr,
+    [0x21] = op_logic,    [0x24] = op_bit_zp,   [0x25] = op_logic,
+    [0x26] = op_rmw,      [0x28] = op_plp,      [0x29] = op_logic,
+    [0x2A] = op_rmw,      [0x2C] = op_bit_abs,  [0x2D] = op_logic,
+    [0x2E] = op_rmw,      [0x30] = op_branch,   [0x31] = op_logic,
+    [0x35] = op_logic,    [0x36] = op_rmw,      [0x38] = op_sec,
+    [0x39] = op_logic,    [0x3D] = op_logic,    [0x3E] = op_rmw,
+    [0x40] = op_rti,      [0x41] = op_logic,    [0x45] = op_logic,
+    [0x46] = op_rmw,      [0x48] = op_pha,      [0x49] = op_logic,
+    [0x4A] = op_rmw,      [0x4C] = op_jmp_abs,  [0x4D] = op_logic,
+    [0x4E] = op_rmw,      [0x50] = op_branch,   [0x51] = op_logic,
+    [0x55] = op_logic,    [0x56] = op_rmw,      [0x58] = op_cli,
+    [0x59] = op_logic,    [0x5D] = op_logic,    [0x5E] = op_rmw,
+    [0x60] = op_rts,      [0x61] = op_adc_sbc,  [0x65] = op_adc_sbc,
+    [0x66] = op_rmw,      [0x68] = op_pla,      [0x69] = op_adc_sbc,
+    [0x6A] = op_rmw,      [0x6C] = op_jmp_ind,  [0x6D] = op_adc_sbc,
+    [0x6E] = op_rmw,      [0x70] = op_branch,   [0x71] = op_adc_sbc,
+    [0x75] = op_adc_sbc,  [0x76] = op_rmw,      [0x78] = op_sei,
+    [0x79] = op_adc_sbc,  [0x7D] = op_adc_sbc,  [0x7E] = op_rmw,
+    [0x81] = op_sta_indx, [0x84] = op_sty_zp,   [0x85] = op_sta_zp,
+    [0x86] = op_stx_zp,   [0x88] = op_dey,      [0x8A] = op_txa,
+    [0x8C] = op_sty_abs,  [0x8D] = op_sta_abs,  [0x8E] = op_stx_abs,
+    [0x90] = op_branch,   [0x91] = op_sta_indy, [0x94] = op_sty_zpx,
+    [0x95] = op_sta_zpx,  [0x96] = op_stx_zpy,  [0x98] = op_tya,
+    [0x99] = op_sta_absy, [0x9A] = op_txs,      [0x9D] = op_sta_absx,
+    [0xA0] = op_ldy_imm,  [0xA1] = op_lda_indx, [0xA2] = op_ldx_imm,
+    [0xA4] = op_ldy_zp,   [0xA5] = op_lda_zp,   [0xA6] = op_ldx_zp,
+    [0xA8] = op_tay,      [0xA9] = op_lda_imm,  [0xAA] = op_tax,
+    [0xAC] = op_ldy_abs,  [0xAD] = op_lda_abs,  [0xAE] = op_ldx_abs,
+    [0xB0] = op_branch,   [0xB1] = op_lda_indy, [0xB4] = op_ldy_zpx,
+    [0xB5] = op_lda_zpx,  [0xB6] = op_ldx_zp,   [0xB8] = op_clv,
+    [0xB9] = op_lda_absy, [0xBA] = op_tsx,      [0xBC] = op_ldy_absx,
+    [0xBD] = op_lda_absx, [0xBE] = op_ldx_absy, [0xC0] = op_cpy_imm,
+    [0xC1] = op_cmp_indx, [0xC4] = op_cpy_zp,   [0xC5] = op_cmp_zp,
+    [0xC6] = op_rmw,      [0xC8] = op_iny,      [0xC9] = op_cmp_imm,
+    [0xCA] = op_dex,      [0xCC] = op_cpy_abs,  [0xCD] = op_cmp_abs,
+    [0xCE] = op_rmw,      [0xD0] = op_branch,   [0xD1] = op_cmp_indy,
+    [0xD5] = op_cmp_zpx,  [0xD6] = op_rmw,      [0xD8] = op_cld,
+    [0xD9] = op_cmp_absy, [0xDD] = op_cmp_absx, [0xDE] = op_rmw,
+    [0xE0] = op_cpx_imm,  [0xE1] = op_adc_sbc,  [0xE4] = op_cpx_zp,
+    [0xE5] = op_adc_sbc,  [0xE6] = op_rmw,      [0xE8] = op_inx,
+    [0xE9] = op_adc_sbc,  [0xEA] = op_nop,      [0xEC] = op_cpx_abs,
+    [0xED] = op_adc_sbc,  [0xEE] = op_rmw,      [0xF0] = op_branch,
+    [0xF1] = op_adc_sbc,  [0xF5] = op_adc_sbc,  [0xF6] = op_rmw,
+    [0xF8] = op_sed,      [0xF9] = op_adc_sbc,  [0xFD] = op_adc_sbc,
+    [0xFE] = op_rmw,
 };
 
 void cpu_step(CPU *cpu, Bus *bus) {
@@ -1058,16 +1223,13 @@ i32 main(i32 argc, char **argv) {
 
   init_bus(&bus);
 
-  load_program_from_file(&bus, 0x0400, program_file);
-
-  // Set the reset vector to poi32 to 0x0400
-  static const u8 reset_vector[] = {0x00, 0x04};
-  load_program(&bus, 0xFFFC, reset_vector, (usize)sizeof(reset_vector));
+  load_program_from_file(&bus, 0x0000, program_file);
 
   cpu_reset(&cpu, &bus);
 
   // Execute the program until BRK is encountered (PC = 0x00)
-  while (cpu.PC != 0x00) {
+  u64 max_cycles = cpu.cycles + 5000000;
+  while (cpu.PC != 0x00 && cpu.cycles < max_cycles) {
     cpu_step(&cpu, &bus);
   }
 

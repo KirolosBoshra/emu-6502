@@ -21,7 +21,9 @@ The `-o` flag writes a memory dump after execution.
 
 ## Tests
 
-Assemble `tests/test_prog.asm` with `ca65`/`ld65`, run the emulator, and verify results at the expected memory addresses.
+Assembly: `ca65`/`ld65` assembles `tests/test_prog.asm`, run the emulator, and verify results at the expected memory addresses.
+
+C: `cl65 -t none -C tests/test_prog_c.cfg -o tests/test_prog_c.bin tests/test_prog.c`
 
 ## API
 
@@ -29,19 +31,10 @@ Assemble `tests/test_prog.asm` with `ca65`/`ld65`, run the emulator, and verify 
 load_program(&bus, 0x0200, program, sizeof(program));
 
 load_program_from_file(&bus, 0x0200, "program.bin");
+
+step_cpu(&cpu, &bus); // wrap it in a loop
 ```
 
 ## Status
 
-72/151 official opcodes implemented:
-
-- ORA, AND, EOR, ASL — all addressing modes
-- ADC, SBC — immediate, zero-page, absolute
-- LDA, STA, LDX, STX, LDY, STY — common modes
-- JMP (absolute, indirect), BRK, NOP
-- PHA, PHP, PLA, PLP
-- CMP, CPX, CPY — immediate
-- INC, DEC — zero-page
-- INX, DEX, INY, DEY
-- CLC, SEC, CLD, SED, CLI, SEI, CLV
-- BIT — zero-page, absolute
+All 151 official 6502 opcodes implemented and tested.
